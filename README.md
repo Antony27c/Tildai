@@ -1,0 +1,3 @@
+﻿# Tildai
+
+Cada cobro, tildado.
