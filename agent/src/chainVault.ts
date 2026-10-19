@@ -14,10 +14,14 @@ export const vaultAbi = parseAbi([
   "function dailyCap() view returns (uint256)",
   "function maxRate() view returns (uint256)",
   "function paused() view returns (bool)",
+  "function maxSwap() view returns (uint256)",
+  "function canSwapSavings() view returns (bool)",
+  "function canSwapTaxes() view returns (bool)",
   "function payoutWallet() view returns (address)",
   "function usedOp(bytes32) view returns (bool)",
   "function allocate(bytes32 opId, uint8 to, uint256 amount)",
   "function withdraw(bytes32 opId, uint256 amount)",
+  "function swap(bytes32 opId, uint8 from, address spender, address target, bytes data, uint256 amountIn, uint256 minOut)",
 ]);
 
 const transferEvent = parseAbi(["event Transfer(address indexed from, address indexed to, uint256 value)"])[0];
