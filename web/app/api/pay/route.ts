@@ -1,7 +1,8 @@
 import { decodePaymentSignatureHeader, encodePaymentRequiredHeader, encodePaymentResponseHeader } from "@x402/core/http";
 import { parseAmount } from "../../../lib/ripio.ts";
 import { checkVault } from "../../../lib/vaults.ts";
-import { facilitatorFromEnv, GAS_SPONSORING, payWithX402, requirementsFor } from "../../../lib/x402.ts";
+import { parseSale, settledBody } from "../../../lib/sale.ts";
+import { facilitatorFromEnv, GAS_SPONSORING, payWithX402, requirementsFor, x402Unavailable } from "../../../lib/x402.ts";
 
 const json = (body: unknown, status: number, headers: Record<string, string> = {}) => Response.json(body, { status, headers });
 
@@ -10,6 +11,10 @@ export async function GET(request: Request) {
   const vault = url.searchParams.get("vault") ?? undefined;
   const amount = parseAmount(url.searchParams.get("amount") ?? undefined);
   if (!amount) return json({ error: "Monto inválido" }, 400);
+  const sale = parseSale(url.searchParams.get("sale"));
+  if (!sale.ok) return json({ error: "Venta inválida" }, 400);
+  const unavailable = x402Unavailable();
+  if (unavailable) return json({ error: unavailable }, 503);
   const check = await checkVault(vault);
   if (check.status === "invalid") return json({ error: "Link de cobro inválido" }, 400);
   if (check.status === "error" || !vault) return json({ error: "No pudimos verificar el comercio" }, 503);
@@ -35,7 +40,7 @@ export async function GET(request: Request) {
   }
   const result = await payWithX402(vault, amount, payment, facilitator);
   if (result.status === "rejected") return json({ error: result.reason }, 402);
-  return json(result, 200, {
+  return json(settledBody(sale.sale, result.txHash, vault, amount), 200, {
     "PAYMENT-RESPONSE": encodePaymentResponseHeader({ success: true, transaction: result.txHash, network: "eip155:42220", payer: result.payer }),
   });
 }

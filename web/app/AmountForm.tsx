@@ -1,12 +1,13 @@
 "use client";
 import { useState } from "react";
 import { buildRipioLink, parseAmount } from "../lib/ripio.ts";
+import { payUrl } from "../lib/sale.ts";
 
-export default function AmountForm({ vault, fixed }: { vault: string; fixed: number | null }) {
+export default function AmountForm({ vault, fixed, sale }: { vault: string; fixed: number | null; sale: string | null }) {
   const [raw, setRaw] = useState(fixed ? String(fixed) : "");
   const amount = parseAmount(raw);
   return (
-    <div style={{ display: "grid", gap: 12 }}>
+    <div style={{ display: "grid", gap: 12 }} data-pay-url={amount ? payUrl(vault, amount, sale) : undefined}>
       {!fixed && (
         <label style={{ display: "grid", gap: 4 }}>
           ¿Cuánto vas a pagar?
