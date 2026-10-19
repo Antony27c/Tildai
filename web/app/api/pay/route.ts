@@ -1,4 +1,5 @@
 import { decodePaymentSignatureHeader, encodePaymentRequiredHeader, encodePaymentResponseHeader } from "@x402/core/http";
+import { reportPayment } from "../../../lib/indexer.ts";
 import { parseAmount } from "../../../lib/ripio.ts";
 import { checkVault } from "../../../lib/vaults.ts";
 import { parseSale, settledBody } from "../../../lib/sale.ts";
@@ -40,7 +41,8 @@ export async function GET(request: Request) {
   }
   const result = await payWithX402(vault, amount, payment, facilitator);
   if (result.status === "rejected") return json({ error: result.reason }, 402);
-  return json(settledBody(sale.sale, result.txHash, vault, amount), 200, {
+  const aviso = await reportPayment(sale.sale, result.txHash);
+  return json({ ...settledBody(sale.sale, result.txHash, vault, amount), ...(aviso && { aviso }) }, 200, {
     "PAYMENT-RESPONSE": encodePaymentResponseHeader({ success: true, transaction: result.txHash, network: "eip155:42220", payer: result.payer }),
   });
 }
