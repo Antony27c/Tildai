@@ -1,0 +1,126 @@
+.main {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s4, 16px);
+  padding: var(--s5, 32px) var(--s4, 24px);
+  font-family: var(--font-sans, system-ui, sans-serif);
+  background: var(--bg, #f6f7f9);
+  color: var(--fg, #111);
+}
+
+.printBtn {
+  font-family: var(--font-sans, system-ui, sans-serif);
+  font-size: 1rem;
+  padding: var(--s2, 8px) var(--s5, 32px);
+  background: var(--accent, #16a34a);
+  color: var(--accent-fg, #fff);
+  border: none;
+  border-radius: var(--radius, 10px);
+  cursor: pointer;
+}
+
+.poster {
+  width: 100%;
+  max-width: 420px;
+  display: grid;
+  justify-items: center;
+  gap: var(--s4, 16px);
+  text-align: center;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e2e4e8);
+  border-radius: var(--radius, 10px);
+  padding: var(--s5, 32px) var(--s4, 24px);
+}
+
+.brand {
+  margin: 0;
+  font-weight: 700;
+  color: var(--accent, #16a34a);
+}
+
+.nombre {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.title {
+  margin: 0;
+  font-size: 1.9rem;
+}
+
+.qr {
+  background: #fff;
+  padding: var(--s3, 12px);
+  border-radius: var(--radius, 10px);
+}
+
+.qr svg {
+  display: block;
+  width: 240px;
+  max-width: 100%;
+  height: auto;
+}
+
+.steps {
+  margin: 0;
+  padding-left: 1.2em;
+  display: grid;
+  gap: var(--s2, 8px);
+  text-align: left;
+  font-size: 1rem;
+}
+
+.foot {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted, #555);
+}
+
+.error {
+  padding: var(--s4, 16px);
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e2e4e8);
+  border-radius: var(--radius, 10px);
+  color: var(--danger, #b91c1c);
+}
+
+@page {
+  size: A4 portrait;
+  margin: 12mm;
+}
+
+@media print {
+  .main {
+    display: block;
+    min-height: 0;
+    padding: 0;
+    background: none;
+    color: #000;
+  }
+
+  .printBtn {
+    display: none;
+  }
+
+  .poster {
+    max-width: none;
+    gap: 6mm;
+    padding: 0;
+    background: none;
+    border: none;
+    border-radius: 0;
+  }
+
+  .qr svg {
+    width: 62mm;
+    max-width: none;
+  }
+
+  .title {
+    font-size: 22pt;
+  }
+}
