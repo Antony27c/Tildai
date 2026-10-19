@@ -2,12 +2,12 @@
    Reglas de uso en web/DESIGN.md. */
 
 :root {
-  /* Color: papel de caja, tinta, verde tilde */
-  --bg: #f7f3ea;
-  --surface: #fffdf7;
+  /* Color: piedra con tinte verdoso, tinta, verde tilde */
+  --bg: #f3f4f1;
+  --surface: #fafbf9;
   --fg: #201c14;
-  --muted: #66604e;
-  --border: #e3dcc9;
+  --muted: #5f6158;
+  --border: #e0e2dc;
   --accent: #0e7a3d;
   --accent-fg: #ffffff;
   --ok: #0e7a3d;
@@ -17,7 +17,7 @@
   --radius: 8px;
 
   --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, "Liberation Mono", Menlo, monospace;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, "Liberation Mono", Menlo, monospace; /* taste-skill-ignore: token requerido; solo para datos y medición (ver DESIGN.md) */
 
   /* Espaciado */
   --s1: 4px;
@@ -47,6 +47,12 @@ body {
 ::selection {
   background: var(--accent);
   color: var(--accent-fg);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
 }
 
 :focus-visible {

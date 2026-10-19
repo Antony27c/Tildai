@@ -1,7 +1,10 @@
 import type { ReactNode } from "react";
 import "./globals.css";
 
-export const metadata = { title: "Tildai - cada cobro, tildado" };
+export const metadata = {
+  title: "Tildai - cada cobro, tildado",
+  icons: { icon: "/icon.svg" },
+};
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
