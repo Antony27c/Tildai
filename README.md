@@ -59,7 +59,7 @@ Hoy el agente lee los `Transfer` directo de la cadena y el aviso sale cuando el 
 
 ## Modelo de seguridad
 
-- **El agente no custodia fondos.** La plata está en el `TildaiVault` de cada comercio. El dueño es una dirección propia (no la del agente).
+- **El agente no custodia fondos.** La plata está en el `TildaiVault` de cada comercio. El dueño pone su propia wallet, una donde firme: es la única que puede sacar todo y no se puede cambiar después.
 - **Destinos permitidos.** El agente solo puede: apartar dentro del vault (`allocate`), retirar wARS operativo a la **wallet de retiro del dueño** (`withdraw`) y hacer swaps con los contratos de Textile habilitados (`swap`). Los USD₮ quedan en el vault; solo el dueño los saca. Un token o el propio vault no pueden registrarse como destino de Textile.
 - **Tope diario** (retiros + dolarización, día en hora argentina), **precio máximo** del dólar y **tope por swap**, chequeados en el contrato. El swap solo confía en los saldos antes/después: si entra menos USD₮ que el mínimo o la tasa es peor que el máximo, revierte.
 - **Ahorro e impuestos protegidos.** El agente no los retira; solo puede dolarizarlos si el dueño lo habilitó por separado.
@@ -79,14 +79,12 @@ Requisitos: Node 24+ y [Foundry](https://book.getfoundry.sh) para los contratos.
 | `web/` | `npm install` | `npm test` y `npm run build` | `npm run dev` |
 | `fx/` | `npm install` | `npm test` | se usa como librería desde `agent/` |
 
-Resultado al 19/10: contratos 22, agent 60 (+1 salteado), indexer 48 (+1 salteado), fx 28, web 37; todos en verde.
-
 Scripts del agente (desde `agent/`, después de `forge build` en `contracts/`):
 
 - `npm run wallet`: genera la wallet del agente y guarda la clave en `.env`; imprime solo la dirección.
 - `node scripts/deploy-sepolia.ts`: despliega factory + tokens de prueba en Sepolia y verifica el attribution tag de cada tx. Guarda en `contracts/deployments/celo-sepolia.json`.
-- `node scripts/register-8004.ts celoSepolia|celo`: registra la identidad ERC-8004 desde la wallet del agente.
-- `node scripts/deploy-mainnet.ts`: dry run (simula, no envía). Con `CONFIRM_MAINNET=1` despliega. Igual para `register-8004.ts celo`.
+- `node scripts/register-8004.ts celoSepolia|celo`: registra la identidad ERC-8004 desde la wallet del agente. Si quedó a medias (registrada sin `registrations` en la URI), solo completa la URI.
+- `node scripts/deploy-mainnet.ts`: dry run (simula, no envía). Con `CONFIRM_MAINNET=1` despliega; guarda el hash en `contracts/deployments/celo.json` apenas lo envía (un reintento busca el recibo, no redespliega), junto con el commit y el hash del bytecode, y relee `wars()`, `usdt()` y `agent()` de la factory. Igual para `register-8004.ts celo`. En PowerShell: `$env:CONFIRM_MAINNET="1"; node scripts/deploy-mainnet.ts`; en cmd: `set "CONFIRM_MAINNET=1"` y después el comando.
 
 ## Variables de entorno
 
@@ -112,9 +110,9 @@ Solo nombres. Los valores van en un `.env` por carpeta, que está en `.gitignore
 
 Fuente de Sepolia: [`contracts/deployments/celo-sepolia.json`](contracts/deployments/celo-sepolia.json).
 
-- **Attribution tag (ERC-8021):** `celo_c376b2fd04bc`, agregado en el cliente de wallet del agente (`agent/src/chain.ts`) a todas sus tx. Los scripts de deploy y registro verifican el tag de cada tx con `verifyTx`.
+- **Attribution tag (ERC-8021):** `celo_c376b2fd04bc`, agregado en el cliente de wallet del agente (`agent/src/chain.ts`) a todas sus tx. Los scripts de deploy y registro verifican el tag de cada tx con `verifyTx`, y `agent/test/attribution.test.ts` comprueba sin red que las tx que firma `agentClients()` (incluidas las CIP-64 con `feeCurrency`) llevan el sufijo.
 - **Wallets PayTo (x402):** los `TildaiVault` de cada comercio. El cliente paga directo al vault; los pagos x402 no llevan nuestro tag. Mainnet: **pendiente** (no hay vaults desplegados).
-- **Gas sponsoreado (x402):** no lo pagamos nosotros. La ruta `/api/pay` declara la extensión `eip2612GasSponsoring` (`GAS_SPONSORING` en `web/lib/x402.ts`): el cliente firma fuera de la cadena el permit EIP-2612 (que habilita a Permit2 a mover su wARS) y la autorización de Permit2, y el **facilitador x402 de Celo** (`api.x402.celo.org`) envía la liquidación onchain y paga el gas, incluido el del permit. El cliente no necesita CELO ni hacer un `approve`. Según la documentación del facilitador, la API key trae settlements gratis y después cobra gas + comisión a quien la usa. Las tx propias del agente (alta del vault, apartados, retiros, swaps) las paga el agente: en mainnet en USD₮ por fee abstraction, en Sepolia en CELO de prueba.
+- **Gas sponsoreado (x402):** el cliente no paga gas. El facilitador x402 de Celo (`api.x402.celo.org`) envía la liquidación y paga el gas (incluido el permit EIP-2612, declarado con la extensión `eip2612GasSponsoring` en `GAS_SPONSORING` de `web/lib/x402.ts`), y lo descuenta del saldo de nuestra API key: primero créditos gratis, después gas al costo (para wARS sin comisión, porque no tiene precio en USD). Es gas que sponsoreamos nosotros vía el facilitador y no cuenta como aporte. Las tx propias del agente (alta del vault, apartados, retiros, swaps) las paga el agente: en mainnet en USD₮ por fee abstraction, en Sepolia en CELO de prueba.
 - **Usuarios y métricas:** **pendiente**. No hay comercios ni clientes reales todavía.
 - **Transacciones en mainnet:** **pendiente**.
 

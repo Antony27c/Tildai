@@ -116,9 +116,9 @@ Vs. mismo día de la semana pasada (...): ...%
 
 **Wallets y saldo:**
 - [ ] [MAINNET] Wallet del agente `0x2B7c…1f65` con USD₮ para gas (fee abstraction).
-- [ ] [MAINNET] ERC-8004 registrado: `CONFIRM_MAINNET=1 node scripts/register-8004.ts celo`.
-- [ ] [MAINNET] Factory desplegada: `CONFIRM_MAINNET=1 node scripts/deploy-mainnet.ts` (con el OK del dueño del proyecto).
-- [ ] Wallet del dueño del comercio (dirección `0x` para el `/start`).
+- [ ] [MAINNET] ERC-8004 registrado: `$env:CONFIRM_MAINNET="1"; node scripts/register-8004.ts celo` (PowerShell; comandos de cmd en `docs/handoff.md`).
+- [ ] [MAINNET] Factory desplegada: `$env:CONFIRM_MAINNET="1"; node scripts/deploy-mainnet.ts` (con el OK del dueño del proyecto).
+- [ ] Wallet del dueño del comercio, una donde firme (MiniPay o Valora; nunca una dirección de depósito de un exchange ni la del agente): su dirección `0x` va en el `/start` y no se puede cambiar después.
 - [ ] [MAINNET] Wallet del cliente con wARS en Celo mainnet (MiniPay, Valora o inyectada); no necesita CELO.
 - [ ] [SEPOLIA] Wallet con wARS de prueba para ensayar el aviso con una transferencia directa al vault.
 
