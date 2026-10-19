@@ -40,3 +40,7 @@ Variables en `.env`: `TILDAI_VAULT`, `TILDAI_FROM_BLOCK` (bloque de creación de
 ## Apartado en el cierre de caja
 
 Después del resumen de las 21 hs el agente aparta ahorro e impuestos sobre lo vendido y confirmado ese día argentino (nunca más que el operativo del vault). Porcentajes por `.env`: `TILDAI_SAVINGS_PCT` y `TILDAI_TAXES_PCT` (0 a 100, suma <= 100); si faltan o son inválidos no aparta y lo dice en el mensaje. Los ids `cierre:<fecha AR>:ahorro|impuestos` evitan apartar dos veces si el cierre se repite. En mainnet el gas se paga en USD₮ (`feeCurrency` con el adapter oficial).
+
+## Dolarizar
+
+La tool `dolarizar` (operativo, ahorro o impuestos) pide un preview a Textile, después una cotización firme (`fx/cotizarFirme`, requiere `TEXTILE_API_KEY` y `npm install` dentro de `fx/`) y llama a `vault.swap`. No envía si la cotización supera el precio máximo del vault (propone subirlo: lo firma el dueño), si el dueño no habilitó dolarizar ahorro/impuestos, si el vault está pausado o si la cotización vence antes de mandar la tx. Los tests usan fakes: no se llama a Textile.
