@@ -25,14 +25,18 @@ export const vault: Vault = vaultAddress
     })
   : new FakeVault();
 
+export const balances = vault instanceof ChainVault ? () => vault.balances() : undefined;
 export const book = new SalesBook(vault);
 export const payBaseUrl = () => process.env.TILDAI_PAY_BASE_URL ?? "http://localhost:3000";
 export const rampChainId = () => (network === "celo" ? 42220 : 11142220);
+
+// Official USDT fee-abstraction adapter (docs.celo.org/build-on-celo/fee-abstraction): on mainnet the agent holds no CELO and pays gas in USDT.
+export const USDT_FEE_ADAPTER = "0x0e2a3e05bc9a16f5292a6170456a710cb89c6f72" as const;
 
 let ops: VaultOps | undefined;
 /** Writes go only through agentClients() (attribution tag). Reads the key lazily and never logs it. */
 export function vaultOps() {
   if (!vaultAddress) throw new Error("Falta TILDAI_VAULT: sin vault real no se mueven fondos");
-  if (!ops) ops = new VaultOps({ vault: vaultAddress, ...agentClients(network, need("AGENT_PRIVATE_KEY") as Hex) });
+  if (!ops) ops = new VaultOps({ vault: vaultAddress, feeCurrency: network === "celo" ? USDT_FEE_ADAPTER : undefined, ...agentClients(network, need("AGENT_PRIVATE_KEY") as Hex) });
   return ops;
 }

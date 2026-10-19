@@ -29,14 +29,15 @@ export const opIdOf = (id: string): Hex => keccak256(stringToHex(id));
 
 export class VaultOps {
   records: OpRecord[] = [];
-  private cfg: { vault: Address; wallet: OpsWallet; reader: OpsReader; onRecord: (r: OpRecord) => void; notify: (msg: string) => void };
+  private cfg: { vault: Address; wallet: OpsWallet; reader: OpsReader; feeCurrency?: Address; onRecord: (r: OpRecord) => void; notify: (msg: string) => void };
 
   // shortcut: records live in memory and go to the log; persist them (and push `notify` to Telegram) when the agent has a store.
-  constructor(c: { vault: Address; wallet: OpsWallet; reader: OpsReader; onRecord?: (r: OpRecord) => void; notify?: (msg: string) => void }) {
+  constructor(c: { vault: Address; wallet: OpsWallet; reader: OpsReader; feeCurrency?: Address; onRecord?: (r: OpRecord) => void; notify?: (msg: string) => void }) {
     this.cfg = {
       vault: c.vault,
       wallet: c.wallet,
       reader: c.reader,
+      feeCurrency: c.feeCurrency,
       onRecord: c.onRecord ?? ((r) => console.log("[tildai] op", r.id, r.accion, r.resultado, r.txHash ?? r.error ?? "")),
       notify: c.notify ?? ((m) => console.error("[tildai] ALERTA", m)),
     };
@@ -58,7 +59,7 @@ export class VaultOps {
   private async run(id: string, accion: OpRecord["accion"], monto: bigint, plan: () => Promise<{ destino: string; fn: string; args: unknown[] }>): Promise<OpRecord> {
     const opId = opIdOf(id);
     const rec: OpRecord = { id, opId, accion, monto, destino: "?", resultado: "error", at: Date.now() };
-    const { vault, wallet, reader } = this.cfg;
+    const { vault, wallet, reader, feeCurrency } = this.cfg;
     try {
       if (monto <= 0n) throw new Error("el monto tiene que ser mayor a 0");
       const p = await plan();
@@ -68,7 +69,7 @@ export class VaultOps {
         return this.finish(rec);
       }
       const { request } = await reader.simulateContract({ account: wallet.account, address: vault, abi: vaultAbi, functionName: p.fn, args: [opId, ...p.args] });
-      rec.txHash = await wallet.writeContract(request);
+      rec.txHash = await wallet.writeContract(feeCurrency ? { ...request, feeCurrency } : request);
       const receipt = await reader.waitForTransactionReceipt({ hash: rec.txHash });
       if (receipt.status !== "success") throw new Error(`la tx ${rec.txHash} se revirtió`);
       rec.resultado = "ejecutada";
