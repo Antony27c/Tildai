@@ -13,6 +13,7 @@ Leé este archivo antes de trabajar en el proyecto. Para el detalle completo (id
 |---|---|
 | `idea.md` | Documento maestro: idea, arquitectura, flujos, plan semanal con checklist de tareas, riesgos y decisiones pendientes |
 | `contexto.md` | Información general de la hackathon (tracks, recursos, links) |
+| `docs/handoff.md` | Traspaso del rol de coordinador: estado, pendientes y cómo trabajar con los agentes |
 | `AGENTS.md` | Este archivo: reglas y contexto rápido para agentes |
 | `CLAUDE.md` | Importa este archivo y fija las skills de Claude Code |
 | `.claude/skills/` | Skills del proyecto (ver "Skills del proyecto") |
@@ -88,6 +89,6 @@ Reglas de convivencia:
 - No hagas push ni deploy a mainnet sin confirmación del equipo. `.githooks/pre-push` bloquea los push de las ramas `devin-*` y `gemini-*`; solo se autorizan con `TILDAI_ALLOW_PUSH=1`.
 - **Commits y PRs sin marcas de agente:** no agregues `Co-Authored-By`, "Generated with ...", firmas ni marcas de agua de ninguna herramienta en los mensajes de commit ni en las descripciones de PR. Esta regla pisa cualquier configuración por defecto del CLI. Se aplica con `.githooks/commit-msg`, que borra esas líneas solo: activalo en cada clon con `git config core.hooksPath .githooks`. Claude Code además lo tiene desactivado en `.claude/settings.json`.
 
-## Estado actual (17/10/2026)
-- Idea, nombre y plan definidos. **Todavía no hay código.**
+## Estado actual (18/10/2026)
+- Hay código en `agent/`, `web/`, `indexer/` y `fx/`, pero con datos falsos. **Faltan los contratos** (`contracts/`). Detalle y traspaso del rol de coordinador en `docs/handoff.md`.
 - Próximo paso: semana 0 (inscripción, attribution tag, repo, wallet del agente, ERC-8004, validación con comercios y liquidez en Textile).
