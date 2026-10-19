@@ -22,6 +22,7 @@ class FakeChain implements ChainReader {
   fail = false;
   ranges: [bigint, bigint][] = [];
   async getBlockNumber() { if (this.fail) throw new Error('rpc down'); return this.head; }
+  async getBlock(p: { blockNumber: bigint }) { if (this.fail) throw new Error('rpc down'); return { timestamp: p.blockNumber }; }
   async getLogs(p: Parameters<ChainReader['getLogs']>[0]) {
     if (this.fail) throw new Error('rpc down');
     this.ranges.push([p.fromBlock, p.toBlock]);

@@ -16,6 +16,7 @@ const logs: Log[] = [
 ];
 const client: ChainReader = {
   getBlockNumber: async () => 100n,
+  getBlock: async (p) => ({ timestamp: 1700000000n + p.blockNumber * 5n }),
   getLogs: async (p) => logs.filter((l) => l.address === p.address && (p.event === vaultCreatedEvent || p.args!.to.includes(l.args.to!)) && l.blockNumber! >= p.fromBlock && l.blockNumber! <= p.toBlock),
 };
 const mk = (store: Store, save?: (s: Store) => Promise<void>) =>
