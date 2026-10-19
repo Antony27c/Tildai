@@ -43,6 +43,28 @@ test('arranque: variable obligatoria ausente o inválida falla nombrándola', as
   await assert.rejects(start(env({ TILDAI_NETWORK: 'celo', TILDAI_FACTORY: V1, TILDAI_FROM_BLOCK: 'abc' })), /TILDAI_FROM_BLOCK/);
 });
 
+test('variables numéricas vacías usan el default, no un puerto al azar', async () => {
+  try {
+    const s = await start(env({ TILDAI_STORE_PATH: await tmp(), TILDAI_PORT: '', TILDAI_POLL_SECONDS: '', TILDAI_HOST: '' }), client);
+    assert.equal((s.server.address() as AddressInfo).port, 8787);
+    await s.stop();
+  } catch (e) {
+    // Si 8787 está ocupado, el EADDRINUSE igual prueba que resolvió el default.
+    assert.match((e as Error).message, /EADDRINUSE.+8787/);
+  }
+});
+
+test('stop es idempotente: la segunda señal devuelve la misma promesa', async () => {
+  const path = await tmp();
+  const s = await start(env({ TILDAI_STORE_PATH: path, TILDAI_POLL_SECONDS: '60' }), client);
+  s.store.vaults.set(V1, '0x00000000000000000000000000000000000000c1');
+  const p1 = s.stop();
+  const p2 = s.stop();
+  assert.equal(p1, p2);
+  await p1;
+  assert.equal((await loadStore(path)).vaults.get(V1), '0x00000000000000000000000000000000000000c1');
+});
+
 test('apagado prolijo: cierra el server, no espera el sleep del watch y persiste el store', async () => {
   const path = await tmp();
   const s = await start(env({ TILDAI_STORE_PATH: path, TILDAI_POLL_SECONDS: '60' }), client);
