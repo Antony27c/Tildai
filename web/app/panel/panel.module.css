@@ -31,6 +31,30 @@
   color: var(--accent, #0a7f4f);
 }
 
+.tabs {
+  display: flex;
+  gap: var(--s2, 8px);
+  flex-wrap: wrap;
+}
+
+.tab,
+.tabActive {
+  padding: var(--s1, 4px) var(--s3, 12px);
+  border-radius: var(--radius, 12px);
+  border: 1px solid var(--border, #e3e5ea);
+  text-decoration: none;
+  font-size: 0.9rem;
+  color: var(--fg, #111);
+  background: var(--surface, #fff);
+}
+
+.tabActive {
+  background: var(--accent, #0a7f4f);
+  border-color: var(--accent, #0a7f4f);
+  color: var(--accent-fg, #fff);
+  font-weight: 600;
+}
+
 .stats {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));

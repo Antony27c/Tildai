@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { dayRangeAR, fetchPanel, formatHoraAR, formatPesos, readVaultBalance, summarize } from "./panel.ts";
+import { byDay, dayRangeAR, fetchPanel, formatHoraAR, formatPesos, parseDia, periodRangeAR, readVaultBalance, summarize } from "./panel.ts";
 import { WARS } from "./wars.ts";
 
 const DAY = 86_400_000;
@@ -25,6 +25,54 @@ test("dayRangeAR: el día empieza a las 00:00 en Argentina (UTC-3)", () => {
   // exactamente medianoche AR del 19 (03:00 UTC) ya es el día 19; un ms antes sigue siendo el 18
   assert.equal(dayRangeAR(Date.UTC(2026, 9, 19, 3)).since, Date.UTC(2026, 9, 19, 3));
   assert.equal(dayRangeAR(Date.UTC(2026, 9, 19, 3) - 1).since, Date.UTC(2026, 9, 18, 3));
+});
+
+test("parseDia: solo hoy/ayer/7d; cualquier otra cosa cae en hoy", () => {
+  assert.equal(parseDia("hoy"), "hoy");
+  assert.equal(parseDia("ayer"), "ayer");
+  assert.equal(parseDia("7d"), "7d");
+  for (const x of [undefined, null, "", "HOY", "30d", "manana", "0"]) assert.equal(parseDia(x), "hoy");
+});
+
+test("periodRangeAR: ayer es el día anterior y 7d los últimos 7 con hoy incluido", () => {
+  const now = Date.UTC(2026, 9, 19, 15); // 12:00 AR del 19
+  const hoy = Date.UTC(2026, 9, 19, 3);
+  assert.deepEqual(periodRangeAR("hoy", now), { since: hoy, until: hoy + DAY });
+  assert.deepEqual(periodRangeAR("ayer", now), { since: hoy - DAY, until: hoy });
+  assert.deepEqual(periodRangeAR("7d", now), { since: hoy - 6 * DAY, until: hoy + DAY });
+});
+
+test("periodRangeAR: borde de medianoche AR y cambio de mes", () => {
+  // 01/10 02:00 UTC = 30/9 23:00 AR → "hoy" es 30/9, "ayer" 29/9, 7d arranca 24/9
+  const now = Date.UTC(2026, 9, 1, 2);
+  assert.equal(periodRangeAR("hoy", now).since, Date.UTC(2026, 8, 30, 3));
+  assert.deepEqual(periodRangeAR("ayer", now), { since: Date.UTC(2026, 8, 29, 3), until: Date.UTC(2026, 8, 30, 3) });
+  assert.equal(periodRangeAR("7d", now).since, Date.UTC(2026, 8, 24, 3));
+  // 02:59:59 UTC del 1/10 = 30/9 23:59:59 AR → "ayer" es 29/9; a la medianoche AR exacta ya es 30/9
+  assert.equal(periodRangeAR("ayer", Date.UTC(2026, 9, 1, 3) - 1).since, Date.UTC(2026, 8, 29, 3));
+  assert.equal(periodRangeAR("ayer", Date.UTC(2026, 9, 1, 3)).since, Date.UTC(2026, 8, 30, 3));
+});
+
+test("byDay: una fila por día del rango, más nuevo primero, días vacíos en 0", () => {
+  const { since, until } = periodRangeAR("7d", Date.UTC(2026, 9, 19, 15)); // 14/10..19/10 AR
+  const p = (ts: number, amount: string, id: string) => ({ id, from: "0x1", amount, txHash: "0x" + id, timestamp: ts });
+  const payments = [
+    p(Date.UTC(2026, 9, 19, 12), "2000000000000000000", "a"), // 19/10 09:00 AR
+    p(Date.UTC(2026, 9, 19, 2, 30), "1000000000000000000", "b"), // 18/10 23:30 AR → día 18
+    p(Date.UTC(2026, 9, 19, 3), "500000000000000000", "c"), // exacto medianoche AR → día 19
+    p(Date.UTC(2026, 9, 15, 20), "4000000000000000000", "d"), // 15/10 17:00 AR
+    { ...p(0, "9000000000000000000", "e"), timestamp: null }, // sin timestamp: no se cuenta
+  ];
+  const days = byDay(payments, since, until);
+  assert.equal(days.length, 7);
+  assert.equal(days[0].daySince, Date.UTC(2026, 9, 19, 3));
+  assert.equal(days[0].totalWei, 2500000000000000000n); // a + c
+  assert.equal(days[0].count, 2);
+  assert.equal(days[1].daySince, Date.UTC(2026, 9, 18, 3));
+  assert.equal(days[1].totalWei, 1000000000000000000n); // b
+  assert.equal(days[4].daySince, Date.UTC(2026, 9, 15, 3));
+  assert.equal(days[4].totalWei, 4000000000000000000n); // d
+  for (const i of [2, 3, 5, 6]) assert.deepEqual({ totalWei: days[i].totalWei, count: days[i].count }, { totalWei: 0n, count: 0 });
 });
 
 test("formatPesos: wei (18 dec) a pesos es-AR, sin float", () => {

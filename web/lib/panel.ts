@@ -19,6 +19,39 @@ export function dayRangeAR(now: number): { since: number; until: number } {
   return { since, until: since + DAY };
 }
 
+export type Dia = "hoy" | "ayer" | "7d";
+
+export function parseDia(x: string | null | undefined): Dia {
+  return x === "ayer" || x === "7d" ? x : "hoy";
+}
+
+// El período siempre se mide en días civiles argentinos; "7d" son los últimos 7, hoy incluido.
+export function periodRangeAR(dia: Dia, now: number): { since: number; until: number } {
+  const { since } = dayRangeAR(now);
+  if (dia === "ayer") return { since: since - DAY, until: since };
+  if (dia === "7d") return { since: since - 6 * DAY, until: since + DAY };
+  return { since, until: since + DAY };
+}
+
+// Una fila por día civil AR dentro de [since, until): más nuevo primero, incluidos los días sin cobros.
+export function byDay(payments: PanelPayment[], since: number, until: number) {
+  const m = new Map<number, { totalWei: bigint; count: number }>();
+  for (const p of payments) {
+    if (p.timestamp === null) continue;
+    const d = Math.floor((p.timestamp - AR_OFFSET) / DAY) * DAY + AR_OFFSET;
+    const cur = m.get(d) ?? { totalWei: 0n, count: 0 };
+    cur.totalWei += BigInt(p.amount);
+    cur.count++;
+    m.set(d, cur);
+  }
+  const days = [];
+  for (let d = since; d < until; d += DAY) {
+    const v = m.get(d) ?? { totalWei: 0n, count: 0 };
+    days.push({ daySince: d, ...v });
+  }
+  return days.reverse();
+}
+
 const PESO = 10n ** 18n;
 const intFmt = new Intl.NumberFormat("es-AR", { maximumFractionDigits: 0 });
 
