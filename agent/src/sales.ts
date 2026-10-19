@@ -125,3 +125,5 @@ export async function cierreCaja(book: SalesBook) {
   if (!verified) lines.push("No pude verificar los pagos onchain; el total puede estar incompleto.");
   return { verificado: verified, total: weiToPesos(hoy.total), cantidad: hoy.count, ticketPromedio: weiToPesos(hoy.avg), totalSemanaPasada: weiToPesos(prev.total), variacionPct: vs, resumen: lines.join("\n") };
 }
+
+export const diaISO = (day: number) => new Date(day * DAY).toISOString().slice(0, 10);
