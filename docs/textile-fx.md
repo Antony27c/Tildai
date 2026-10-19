@@ -110,10 +110,10 @@ Textile FX opera con un modelo híbrido: **RFQ off-chain con liquidación atómi
 
 ## 5. Módulo de Integración `fx/`
 
-En la carpeta `fx/` del repositorio se implementaron las funciones para cotizar y preparar el swap:
+En la carpeta `fx/` del repositorio se implementaron las funciones para cotizar, preparar el swap y calcular el P&L:
 
-- **Archivo principal:** [`fx/index.ts`](../fx/index.ts)
-- **Suite de tests:** [`fx/index.test.ts`](../fx/index.test.ts)
+- **Archivos:** [`fx/index.ts`](../fx/index.ts) y [`fx/pnl.ts`](../fx/pnl.ts)
+- **Suite de tests:** [`fx/index.test.ts`](../fx/index.test.ts) y [`fx/pnl.test.ts`](../fx/pnl.test.ts)
 
 ### 1. Cotización indicativa (`cotizar`)
 ```typescript
@@ -134,7 +134,7 @@ import { cotizarFirme } from './fx/index.ts';
 const swapArgs = await cotizarFirme({
   monto: '50000',
   vaultAddress: '0xVault...',
-  maxRate: parseUnits('1700', 18),      // Max wARS (wei) pagados por 1 USD₮ entero (unidad del vault)
+  maxRate: parseUnits('1700', 18),       // Max wARS (wei) pagados por 1 USD₮ entero (unidad del vault)
   previewRate: parseUnits('1617.33', 18) // Tasa preview obligatoria para control de slippage <= 1%
 });
 
@@ -151,25 +151,41 @@ console.log(swapArgs);
 // }
 ```
 
-### Reglas de validación y causas de rechazo:
-La función `cotizarFirme` rechaza la orden y arroja un error descriptivo si:
-1. `TEXTILE_API_KEY` no está configurada en el entorno (o en opciones).
-2. La API responde `status: "no_quote"` (devuelve el motivo reportado, sin inventar tasas por defecto).
-3. `status` no es `'quoted'`.
-4. Ocurre un error HTTP o de red (la API key nunca se filtra en el mensaje de error; se utiliza `status` y `error.code` sin volcar cuerpos crudos).
-5. `expiresAt` ya pasó o vence en menos de 15 segundos.
-6. `quote.spender` no es una dirección autorizada en Celo (`0xa9AA0a64769cBed4d3B1Ceb4Df01CdE915C235b3` ni `0x01b006d5c687bde182aa36F542f1f014144742e2`).
-7. `transactions.swap.to` (target) no es una dirección autorizada en Celo.
-8. `quote.takerPays` supera el monto pedido (`takerPays > sellAmountAtomic`).
-9. La tasa en enteros supera `maxRate` (`takerPays * 10^6 > buyAmount * maxRate`).
-10. La tasa en enteros es más de 1% peor que la cotización previa (`firmRateWei * 100 > previewRateWei * 101`).
-11. La solicitud excede el timeout de 75 segundos.
+### 3. P&L y métricas para el Track de Textile (`fx/pnl.ts`)
+El track *Open Corridors: Textile FX* evalúa **P&L, volumen cotizado y volumen ejecutado**.
+El módulo implementa las métricas con aritmética entera pura de `bigint` (cero floats):
 
-### Ejecución de tests:
-```bash
-cd fx && node --test
+```typescript
+import { calcularPnl, calcularPnlConTasaActual, obtenerSwapsOnchain } from './fx/pnl.ts';
+
+// 1. Obtener eventos onchain Swapped de los vaults
+const swaps = await obtenerSwapsOnchain({
+  client: viemPublicClient,
+  vaultAddresses: ['0xVault1...', '0xVault2...'],
+  fromBlock: 12345000n,
+  toBlock: 12350000n,
+  chunkSize: 5000n, // Consultas por tramos para respetar límites de RPC
+});
+
+// 2. Calcular P&L con la tasa actual de Textile
+const pnl = await calcularPnlConTasaActual(swaps);
+console.log(pnl);
+// {
+//   totalWarsSpent: 50000000000000000000000n,   // Volumen ejecutado en wARS
+//   totalUsdtReceived: 30915150n,               // Volumen ejecutado en USD₮ (6 dec)
+//   count: 1,                                   // Operaciones ejecutadas
+//   averageRateWei: 1617329982225545905n,       // Tasa promedio ponderada de compra
+//   currentRateWei: 1650000000000000000000n,    // Tasa spot actual de preview
+//   currentValueWars: 51010000000000000000000n, // Valor actual en pesos de los USD₮
+//   pnlWars: 1010000000000000000000n,           // P&L: +1.010 wARS de ganancia
+//   status: 'ok'
+// }
 ```
-Todos los tests corren con respuestas mockeadas (sin bloquear liquidez real de los makers) y validan el caso feliz y cada causa de rechazo.
+- **Sin tasa actual:** Si `cotizar()` no responde o devuelve `no_quote`, `calcularPnlConTasaActual` devuelve `status: 'sin_tasa_actual'` y `pnlWars: undefined`. **Nunca utiliza una tasa por defecto**.
+- **Aritmética exacta:**
+  - `averageRateWei = (totalWarsSpent * 10^6) / totalUsdtReceived`
+  - `currentValueWars = (totalUsdtReceived * currentRateWei) / 10^6`
+  - `pnlWars = currentValueWars - totalWarsSpent` (positivo si el dólar subió frente a wARS).
 
 ---
 
@@ -181,7 +197,7 @@ Para cumplir con las reglas de negocio del proyecto:
 2. **Paso 1 - Preview:** El agente llama a `cotizar(excedente)`. Si la respuesta es `no_quote` o la API no responde, el agente **no mueve fondos** y avisa por Telegram.
 3. **Paso 2 - Cotización firme:** Si la tasa es aceptable, el agente llama a `cotizarFirme(...)` pasando la dirección del vault, `maxRate` y `previewRate`.
 4. **Paso 3 - Ejecución onchain:** Con los argumentos recibidos (`spender`, `target`, `data`, `amountIn`, `minOut`), el agente genera un `opId` único y envía la transacción a `TildaiVault.swap(...)` en Celo mainnet, incluyendo el attribution tag ERC-8021.
-5. **Notificación:** El agente envía el reporte por Telegram: *"✓ Dolarizamos $50.000 wARS a 30,91 USD₮ (tasa: $1.617,33) vía Textile FX"*.
+5. **Notificación y P&L:** El agente envía el reporte por Telegram: *"✓ Dolarizamos $50.000 wARS a 30,91 USD₮ (tasa: $1.617,33) vía Textile FX. P&L acumulado: +$1.010 wARS"*.
 
 ---
 
