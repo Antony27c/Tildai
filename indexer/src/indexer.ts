@@ -171,7 +171,8 @@ export function createIndexer(o: IndexerOpts) {
             try {
               const { timestamp } = await rpc(() => client.getBlock({ blockNumber: p.block }));
               blocks.set(p.block, Number(timestamp) * 1000);
-            } catch {
+            } catch (e) {
+              log(e);
               blocks.set(p.block, null);
               break;
             }

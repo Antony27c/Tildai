@@ -141,3 +141,30 @@ test('ventas, pagos con timestamp, eventos y cursor sobreviven un reinicio', asy
   assert.equal((await idx2.pollOnce()).ok, true);
   assert.equal(st.events.at(-1)!.seq, 5);
 });
+
+test('GET /events: con más de 500 eventos el cursor permite leer de a tandas sin saltear ni repetir', async () => {
+  const first = store.events.at(-1)?.seq ?? 0;
+  for (let i = 1; i <= 505; i++) {
+    const p: import('../src/indexer.ts').Payment = { id: `x:${i}`, vault: V1, from: '0x00000000000000000000000000000000000000b1', amount: 1n, block: 1n, txHash: h(i) };
+    store.payments.set(p.id, p);
+    store.addEvent('pago_sin_venta', p.id);
+  }
+  const t1 = await get(`/events?since=${first}`);
+  assert.equal(t1.status, 200);
+  const ev1 = t1.body.events as { seq: number }[];
+  assert.equal(ev1.length, 500);
+  assert.equal(t1.body.cursor, ev1.at(-1)!.seq);
+  assert.equal(t1.body.cursor, first + 500);
+  const t2 = await get(`/events?since=${t1.body.cursor}`);
+  const ev2 = t2.body.events as { seq: number }[];
+  assert.deepEqual([...ev1, ...ev2].map((e) => e.seq), Array.from({ length: 505 }, (_, i) => first + 1 + i));
+});
+
+test('GET /payments: sin rango incluye pagos sin timestamp con timestamp null, con rango da 503', async () => {
+  store.payments.set('sints:0', { id: 'sints:0', vault: V1, from: '0x00000000000000000000000000000000000000b1', amount: 9n, block: 1n, txHash: h(50) });
+  const all = await get(`/payments?vault=${V1}`);
+  const sinTs = (all.body as { id: string; timestamp: number | null }[]).find((p) => p.id === 'sints:0');
+  assert.equal(sinTs!.timestamp, null);
+  assert.equal((await get(`/payments?vault=${V1}&since=0`)).status, 503);
+  store.payments.delete('sints:0');
+});
