@@ -10,6 +10,11 @@ import { agentClients, ATTRIBUTION_CODE } from "../src/chain.ts";
 
 const network = process.argv[2];
 assert.ok(network === "celo" || network === "celoSepolia", "uso: node scripts/register-8004.ts celoSepolia|celo");
+// Checked before any RPC call: exiting with an open HTTP handle crashes Node on Windows.
+if (network === "celo" && process.env.CONFIRM_MAINNET !== "1") {
+  console.log("Mainnet: no se mandó nada. Para registrar: CONFIRM_MAINNET=1 node scripts/register-8004.ts celo");
+  process.exit(0);
+}
 const net = {
   celo: { chainId: 42220, registry: "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432", file: "celo.json" },
   celoSepolia: { chainId: 11142220, registry: "0x8004A818BFB912233c491871b3d84c89A494BD9e", file: "celo-sepolia.json" },
