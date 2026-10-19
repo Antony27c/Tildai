@@ -86,6 +86,22 @@ Si se agregan, misma regla: colección abierta, crédito en el footer, caption h
   - `scroll-behavior: smooth` en globals.
 - El momento de firma: la tilde que se dibuja al "cobrar" en el ticket del hero.
 
+## Marca
+
+Los assets de marca viven en las convenciones de Next (`app/`), que los sirve solas.
+**El logo definitivo se está generando:** cuando llegue, alcanza con reemplazar los
+archivos, sin tocar código ni `layout.tsx`.
+
+| Archivo | Qué es | Reemplazo |
+|---|---|---|
+| `app/icon.svg` | Favicon (tilde blanca sobre verde `--accent`). | `app/icon.svg` o `icon.png` del logo final. |
+| `app/apple-icon.png` | Ícono iOS 180×180, cuadrado pleno (iOS le pone la máscara). | PNG 180×180 del logo final, fondo pleno. |
+| `app/opengraph-image.tsx` | Imagen OG 1200×630 generada con `next/og`: fondo `--bg`, wordmark en `--fg` + tilde `--accent`. | Regenerar con el logo, o reemplazar por `opengraph-image.png` estático. |
+| `public/img/*.jpg` | Fotos del mundo del comercio (CC BY-SA, crédito en el footer). | Agregar/reemplazar manteniendo crédito y caption honesta. |
+
+El wordmark de la barra y el footer ("Tildai" + tilde SVG de `cobro/Tick.tsx`) es texto,
+no imagen: si el logo final trae lettering propio, se actualiza en `Landing.tsx`.
+
 ## Voz
 
 Español rioplatense, segunda persona: "cobrás", "tu plata", "podés retirar". Honesto y sin

@@ -98,7 +98,8 @@ export default function Landing() {
               </p>
             ) : null}
             <p className={styles.note}>
-              Sin instalar nada: hablás con un bot de Telegram como con un encargado.
+              Tu cliente paga con pesos desde el celu, sin instalar nada. Vos hablás con un bot de
+              Telegram como con un encargado.
             </p>
           </div>
 
