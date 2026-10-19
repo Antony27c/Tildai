@@ -1,0 +1,11 @@
+#!/bin/sh
+# Las ramas de los agentes (devin-*, gemini-*) no se pushean sin permiso explicito.
+# Para autorizar un push: TILDAI_ALLOW_PUSH=1 git push ...
+[ "$TILDAI_ALLOW_PUSH" = "1" ] && exit 0
+branch=$(git symbolic-ref --short -q HEAD)
+refs=$(cat)
+if echo "$branch
+$refs" | grep -q -E 'Antony27c/(devin|gemini)-'; then
+  echo "Push bloqueado: las ramas de agentes no se pushean sin autorizacion (TILDAI_ALLOW_PUSH=1)." >&2
+  exit 1
+fi

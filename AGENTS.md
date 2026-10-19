@@ -85,7 +85,7 @@ Reglas de convivencia:
 - Si tomás una decisión de arquitectura o se resuelve una "decisión pendiente", actualizá `idea.md` y este archivo.
 - Verificá direcciones de contratos con Celopedia o la documentación oficial. No las inventes.
 - Idioma: documentación y mensajes al usuario en **español rioplatense**. Código e identificadores en inglés.
-- No hagas push ni deploy a mainnet sin confirmación del equipo.
+- No hagas push ni deploy a mainnet sin confirmación del equipo. `.githooks/pre-push` bloquea los push de las ramas `devin-*` y `gemini-*`; solo se autorizan con `TILDAI_ALLOW_PUSH=1`.
 - **Commits y PRs sin marcas de agente:** no agregues `Co-Authored-By`, "Generated with ...", firmas ni marcas de agua de ninguna herramienta en los mensajes de commit ni en las descripciones de PR. Esta regla pisa cualquier configuración por defecto del CLI. Se aplica con `.githooks/commit-msg`, que borra esas líneas solo: activalo en cada clon con `git config core.hooksPath .githooks`. Claude Code además lo tiene desactivado en `.claude/settings.json`.
 
 ## Estado actual (17/10/2026)
