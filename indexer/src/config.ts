@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { WARS } from './indexer.ts';
 
 export type Network = 'celo' | 'celo-sepolia';
-export type IndexerConfig = { network: Network; chainId: number; rpcUrl: string; factory: string; wars: string; startBlock: bigint };
+export type IndexerConfig = { network: Network; chainId: number; rpcUrl: string; factory: string; wars: string; startBlock: bigint; storePath?: string };
 
 const RPC = { celo: 'https://forno.celo.org', 'celo-sepolia': 'https://forno.celo-sepolia.celo-testnet.org' };
 const need = (v: string | undefined, name: string) => {
@@ -21,7 +21,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   if (network === 'celo-sepolia') {
     const d = JSON.parse(readFileSync(new URL('../../contracts/deployments/celo-sepolia.json', import.meta.url), 'utf8'));
     return {
-      network, chainId: 11142220, rpcUrl,
+      network, chainId: 11142220, rpcUrl, storePath: env.TILDAI_STORE_PATH,
       factory: env.TILDAI_FACTORY ?? d.factory,
       wars: env.TILDAI_WARS ?? d.wars,
       startBlock: env.TILDAI_FROM_BLOCK ? BigInt(env.TILDAI_FROM_BLOCK) : SEPOLIA_START,
@@ -29,7 +29,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   }
   if (network !== 'celo') throw new Error(`red desconocida: ${network}`);
   return {
-    network, chainId: 42220, rpcUrl,
+    network, chainId: 42220, rpcUrl, storePath: env.TILDAI_STORE_PATH,
     factory: need(env.TILDAI_FACTORY, 'TILDAI_FACTORY'),
     wars: env.TILDAI_WARS ?? WARS,
     startBlock: BigInt(need(env.TILDAI_FROM_BLOCK, 'TILDAI_FROM_BLOCK')),

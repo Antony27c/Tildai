@@ -27,7 +27,7 @@ export interface ChainReader {
   }): Promise<Log[]>;
 }
 
-export type Sale = { id: string; vault: string; amount: bigint; createdBlock: bigint; status: 'pendiente' | 'cobrada'; paymentId?: string };
+export type Sale = { id: string; vault: string; amount: bigint; createdBlock: bigint; status: 'pendiente' | 'cobrada'; paymentId?: string; txHash?: string };
 export type Payment = { id: string; vault: string; from: string; amount: bigint; block: bigint; txHash: string; saleId?: string };
 
 // shortcut: store en memoria, se pierde al reiniciar; cambiar por DB antes de usarlo con plata real.
@@ -71,17 +71,35 @@ export type IndexerOpts = {
   retries?: number;
   backoffMs?: number;
   sleep?: RetryOpts['sleep'];
+  save?: (store: Store) => Promise<void>; // persistencia; si falla, el error sube (poll lo registra y devuelve ok:false)
   onError?: (e: unknown) => void;
 };
 
 // Cruza un pago con la venta pendiente más vieja del mismo vault y monto exacto, creada en o antes del bloque del pago.
+// Las ventas atadas a una tx (x402) solo las cobra esa tx, ver settleByTx.
 function reconcile(store: Store, p: Payment): boolean {
   if (p.saleId) return false;
   for (const s of store.sales.values()) {
-    if (s.status === 'pendiente' && s.vault === p.vault && s.amount === p.amount && p.block >= s.createdBlock) {
-      s.status = 'cobrada';
-      s.paymentId = p.id;
-      p.saleId = s.id;
+    if (s.status === 'pendiente' && !s.txHash && s.vault === p.vault && s.amount === p.amount && p.block >= s.createdBlock) {
+      claim(s, p);
+      return true;
+    }
+  }
+  return false;
+}
+
+function claim(s: Sale, p: Payment) {
+  s.status = 'cobrada';
+  s.paymentId = p.id;
+  p.saleId = s.id;
+}
+
+// Cobra la venta solo si el indexador ya vio, confirmado, un Transfer de esa tx al vault de la venta por el monto exacto y sin dueño.
+function settleByTx(store: Store, s: Sale): boolean {
+  if (s.status !== 'pendiente' || !s.txHash) return false;
+  for (const p of store.payments.values()) {
+    if (p.txHash === s.txHash && !p.saleId && p.vault === s.vault && p.amount === s.amount && p.block >= s.createdBlock) {
+      claim(s, p);
       return true;
     }
   }
@@ -137,7 +155,7 @@ export function createIndexer(o: IndexerOpts) {
             const id = `${l.transactionHash.toLowerCase()}:${l.logIndex}`;
             let p = store.payments.get(id);
             if (!p) {
-              p = { id, vault: dest.toLowerCase(), from: (src ?? '').toLowerCase(), amount: value, block: l.blockNumber, txHash: l.transactionHash };
+              p = { id, vault: dest.toLowerCase(), from: (src ?? '').toLowerCase(), amount: value, block: l.blockNumber, txHash: l.transactionHash.toLowerCase() };
               store.payments.set(id, p);
               newPayments++;
             }
@@ -146,6 +164,8 @@ export function createIndexer(o: IndexerOpts) {
         }
         store.cursor = max(store.cursor ?? 0n, b + 1n);
       });
+      for (const s of store.sales.values()) if (settleByTx(store, s)) matched++;
+      await o.save?.(store);
       return { ok: true, from, to: safe, newVaults, newPayments, matched };
     } catch (error) {
       log(error);
@@ -163,8 +183,27 @@ export function createIndexer(o: IndexerOpts) {
 
   // Si el RPC falla no se crea la venta: sin bloque de creación no se puede conciliar con seguridad.
   async function createSale(s: { id: string; vault: string; amount: bigint }): Promise<Sale> {
-    return store.addSale({ ...s, createdBlock: await rpc(() => client.getBlockNumber()) });
+    const sale = store.addSale({ ...s, createdBlock: await rpc(() => client.getBlockNumber()) });
+    await o.save?.(store);
+    return sale;
   }
 
-  return { pollOnce, watch, createSale };
+  // Pago x402: el hash lo informa el facilitador pero no se le cree. Queda pendiente hasta que un poll vea el Transfer confirmado.
+  // shortcut: una tx equivocada deja la venta pendiente para siempre sin aviso; agregar vencimiento y alerta al dueño.
+  async function markPaidByTx(saleId: string, txHash: string): Promise<Sale['status']> {
+    const s = store.sales.get(saleId);
+    if (!s) throw new Error(`venta inexistente: ${saleId}`);
+    if (!/^0x[0-9a-fA-F]{64}$/.test(txHash)) throw new Error(`hash de tx inválido: ${txHash}`);
+    const tx = txHash.toLowerCase();
+    if (s.status === 'cobrada') {
+      if (store.payments.get(s.paymentId!)?.txHash === tx) return 'cobrada';
+      throw new Error(`la venta ${saleId} ya está cobrada con otro pago`);
+    }
+    s.txHash = tx;
+    settleByTx(store, s);
+    await o.save?.(store);
+    return s.status;
+  }
+
+  return { pollOnce, watch, createSale, markPaidByTx };
 }
