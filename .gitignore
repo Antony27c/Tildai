@@ -6,3 +6,4 @@ node_modules/
 out/
 cache/
 .DS_Store
+web/AGENTS.md
