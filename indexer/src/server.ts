@@ -71,6 +71,45 @@ const range = (url: URL): [number, number] => {
   return [since, until];
 };
 
+const DAY = 86_400_000;
+const AR = -3 * 3_600_000; // hora argentina: UTC-3 fijo, sin cambio de hora
+const arDay = (ms: number) => new Date(ms + AR).toISOString().slice(0, 10);
+
+// Métricas para la entrega. Un pago sin timestamp cuenta en los totales pero no en
+// byDay ni en activeVaults7d: ubicarlo en un día sería inventar la fecha.
+export function stats(store: Store, now = Date.now()) {
+  const days = new Map<string, { payments: number; warsReceived: bigint }>();
+  for (let i = 13; i >= 0; i--) days.set(arDay(now - i * DAY), { payments: 0, warsReceived: 0n });
+  const active = new Set<string>();
+  let warsReceived = 0n;
+  let paymentsWithoutTimestamp = 0;
+  for (const p of store.payments.values()) {
+    warsReceived += p.amount;
+    if (p.timestamp == null) {
+      paymentsWithoutTimestamp++;
+      continue;
+    }
+    if (p.timestamp >= now - 7 * DAY) active.add(p.vault);
+    const d = days.get(arDay(p.timestamp));
+    if (d) {
+      d.payments++;
+      d.warsReceived += p.amount;
+    }
+  }
+  let salesCobradas = 0;
+  for (const s of store.sales.values()) if (s.status === 'cobrada') salesCobradas++;
+  return {
+    vaults: store.vaults.size,
+    activeVaults7d: active.size,
+    payments: store.payments.size,
+    salesCobradas,
+    warsReceived: warsReceived.toString(),
+    paymentsWithoutTimestamp,
+    byDay: [...days].map(([day, d]) => ({ day, payments: d.payments, warsReceived: d.warsReceived.toString() })),
+    generatedAt: new Date(now).toISOString(),
+  };
+}
+
 export function createApp(o: { indexer: Indexer; store: Store; token: string; onError?: (e: unknown) => void }): Server {
   const { indexer, store } = o;
   const log = o.onError ?? ((e: unknown) => console.error('server:', e));
@@ -136,6 +175,7 @@ export function createApp(o: { indexer: Indexer; store: Store; token: string; on
       // El cursor es el seq del último evento devuelto: con más de 500, el agente sigue desde ahí y no se saltea.
       return send(res, 200, { events: list, cursor: list.at(-1)?.seq ?? since });
     }
+    if (key === 'GET /stats') return send(res, 200, stats(store));
     throw new HttpError(404, 'ruta inexistente');
   }
 
