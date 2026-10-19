@@ -2,7 +2,7 @@ import { defineTool } from "eve/tools";
 import { z } from "zod";
 
 import { apartar } from "../src/fondos.ts";
-import { vaultOps } from "../src/runtime.ts";
+import { opsDelChat } from "../src/runtime.ts";
 
 export default defineTool({
   description:
@@ -12,5 +12,5 @@ export default defineTool({
     monto: z.number().positive().describe("Monto en pesos argentinos, hasta 2 decimales"),
     idOperacion: z.string().min(1).optional().describe("Id de negocio, ej. 'cierre:2026-10-20:ahorro'. Reusalo al reintentar; usá uno distinto solo si el dueño pide repetir a propósito."),
   }),
-  execute: (input) => apartar(vaultOps(), input),
+  execute: (input, ctx) => apartar(opsDelChat(ctx), input),
 });

@@ -17,6 +17,7 @@ const chain = {
 };
 const client: ChainReader = {
   async getBlockNumber() { if (chain.fail) throw new Error('rpc down'); return chain.head; },
+  async getBlock(p: { blockNumber: bigint }) { return { timestamp: 1700000000n + p.blockNumber * 5n }; },
   async getLogs(p) {
     return chain.logs.filter((l) => l.address === p.address && (p.event === vaultCreatedEvent ? l.args.vault : p.args!.to.includes(l.args.to!)) && l.blockNumber! >= p.fromBlock && l.blockNumber! <= p.toBlock);
   },

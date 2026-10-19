@@ -26,12 +26,20 @@ export const vaultAbi = parseAbi([
 
 const transferEvent = parseAbi(["event Transfer(address indexed from, address indexed to, uint256 value)"])[0];
 
+export const factoryAbi = parseAbi([
+  "function createVault(address owner, address payoutWallet, uint256 dailyCap, uint256 maxRate, uint256 maxSwap) returns (address)",
+  "function isVault(address) view returns (bool)",
+  "event VaultCreated(address indexed vault, address indexed owner)",
+]);
+export const vaultCreatedEvent = factoryAbi.find((x) => x.type === "event" && x.name === "VaultCreated")!;
+
 // Loose on purpose: real viem clients and test fakes both fit.
 export type ChainReader = {
   readContract(args: any): Promise<any>;
   getBlockNumber(): Promise<bigint>;
   getLogs(args: any): Promise<any[]>;
   getBlock(args: any): Promise<{ timestamp: bigint }>;
+  getTransactionReceipt?(args: any): Promise<{ status: string; logs?: any[] } | null>;
 };
 
 export type Balances = {
