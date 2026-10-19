@@ -44,3 +44,7 @@ Después del resumen de las 21 hs el agente aparta ahorro e impuestos sobre lo v
 ## Dolarizar
 
 La tool `dolarizar` (operativo, ahorro o impuestos) pide un preview a Textile, después una cotización firme (`fx/cotizarFirme`, requiere `TEXTILE_API_KEY` y `npm install` dentro de `fx/`) y llama a `vault.swap`. No envía si la cotización supera el precio máximo del vault (propone subirlo: lo firma el dueño), si el dueño no habilitó dolarizar ahorro/impuestos, si el vault está pausado o si la cotización vence antes de mandar la tx. Los tests usan fakes: no se llama a Textile.
+
+## Alta del comercio (/start)
+
+El canal de Telegram abre cualquier chat privado si no hay `TILDAI_OWNER_CHAT_ID`. Si un mensaje parece una clave privada o frase semilla no llega al modelo: el canal contesta que la borre. El agente pide la wallet del dueño (0x) y el tope diario, y `crear_vault` llama a `TildaiFactory.createVault` (attribution tag, `feeCurrency` USD₮ en mainnet). Un chat = un vault (registro JSON atómico en `TILDAI_REGISTRY`, default `data/chats.json`); la dirección sale del evento `VaultCreated` del recibo y, si una tx anterior quedó sin confirmar, antes de reintentar verifica su recibo o los logs de la factory. Variables: `TILDAI_FACTORY` y `TILDAI_FROM_BLOCK` (en Sepolia, la factory de `contracts/deployments/celo-sepolia.json`).

@@ -5,6 +5,7 @@ import { agentClients } from "./chain.ts";
 import { ChainVault } from "./chainVault.ts";
 import { SalesBook } from "./sales.ts";
 import { FakeVault, type Vault } from "./vault.ts";
+import { ChatVaultRegistry, CreadorVault } from "./alta.ts";
 import { VaultOps, type Fx } from "./vaultOps.ts";
 
 const network = process.env.TILDAI_NETWORK === "celoSepolia" ? "celoSepolia" : "celo";
@@ -46,3 +47,21 @@ export const fx: Fx = {
   cotizar: async (monto) => (await import("../../fx/index.ts")).cotizar(monto),
   cotizarFirme: async (p) => (await import("../../fx/index.ts")).cotizarFirme(p),
 };
+
+let creador: CreadorVault | undefined;
+/** Onboarding writes also go only through agentClients() (attribution tag, USD₮ gas on mainnet). */
+export function creadorVault() {
+  const factory = process.env.TILDAI_FACTORY as Address | undefined;
+  if (!factory) throw new Error("Falta TILDAI_FACTORY: no puedo dar de alta el comercio");
+  if (!creador) {
+    creador = new CreadorVault({
+      registry: ChatVaultRegistry.load(process.env.TILDAI_REGISTRY ?? "data/chats.json"),
+      factory,
+      fromBlock: BigInt(need("TILDAI_FROM_BLOCK")),
+      feeCurrency: network === "celo" ? USDT_FEE_ADAPTER : undefined,
+      payBaseUrl: payBaseUrl(),
+      ...agentClients(network, need("AGENT_PRIVATE_KEY") as Hex),
+    });
+  }
+  return creador;
+}
