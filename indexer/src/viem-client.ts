@@ -1,7 +1,9 @@
 import { createPublicClient, http } from 'viem';
-import { celo } from 'viem/chains';
+import { celo, celoSepolia } from 'viem/chains';
 import type { ChainReader } from './indexer.ts';
+import type { IndexerConfig } from './config.ts';
 
-export function viemReader(rpcUrl: string): ChainReader {
-  return createPublicClient({ chain: celo, transport: http(rpcUrl) }) as unknown as ChainReader;
+export function viemReader(c: Pick<IndexerConfig, 'network' | 'rpcUrl'>): ChainReader {
+  const chain = c.network === 'celo' ? celo : celoSepolia;
+  return createPublicClient({ chain, transport: http(c.rpcUrl) }) as unknown as ChainReader;
 }
