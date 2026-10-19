@@ -11,13 +11,14 @@ export type Stats = {
   paymentsWithoutTimestamp: number;
   byDay: DayStats[];
   generatedAt: string;
+  chainId?: number;
 };
 export type StatsResult = { ok: true; stats: Stats } | { ok: false; reason: string };
 
 const isCount = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
 const isWei = (v: unknown): v is string => typeof v === "string" && /^\d+$/.test(v);
 
-// Contrato de GET /stats del indexer. Si falta o sobra forma, null: nunca ceros inventados.
+// Contrato de GET /stats del indexer. Si falta o está mal formada, null: nunca ceros inventados.
 export function parseStats(body: unknown): Stats | null {
   if (typeof body !== "object" || body === null) return null;
   const s = body as Record<string, unknown>;
@@ -32,10 +33,16 @@ export function parseStats(body: unknown): Stats | null {
     if (typeof d.day !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(d.day) || !isCount(d.payments) || !isWei(d.warsReceived)) return null;
     byDay.push({ day: d.day, payments: d.payments, warsReceived: d.warsReceived });
   }
+  let chainId: number | undefined;
+  if (s.chainId !== undefined) {
+    if (!isCount(s.chainId) && !isWei(s.chainId)) return null;
+    chainId = Number(s.chainId);
+  }
   return {
     vaults: s.vaults, activeVaults7d: s.activeVaults7d, payments: s.payments,
     salesCobradas: s.salesCobradas, warsReceived: s.warsReceived,
     paymentsWithoutTimestamp: s.paymentsWithoutTimestamp, byDay, generatedAt: s.generatedAt,
+    ...(chainId !== undefined && { chainId }),
   };
 }
 
@@ -48,9 +55,11 @@ export function formatPesos(wei: string): string {
   return `$ ${enteros.format(w / PESO)},${String((w % PESO) / (PESO / 100n)).padStart(2, "0")}`;
 }
 
-export function networkName(env: Env = process.env): string {
-  const id = env.TILDAI_CHAIN_ID ?? "42220";
-  return id === "11142220" ? "Celo Sepolia" : id === "42220" ? "Celo mainnet" : `chain ${id}`;
+// La red que muestra la página es la del indexer (stats.chainId) o TILDAI_CHAIN_ID.
+// Sin default: afirmar "mainnet" sin saberlo es peor que admitir que no está configurada.
+export function networkName(id: string | number | undefined): string {
+  const n = Number(id);
+  return n === 42220 ? "Celo mainnet" : n === 11142220 ? "Celo Sepolia" : "red no configurada";
 }
 
 // El token solo vive en el servidor: esta función corre en el server component, no en el cliente.

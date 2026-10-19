@@ -28,6 +28,11 @@ test("parseStats: acepta el contrato y rechaza cualquier campo faltante o mal fo
   assert.equal(parseStats({ ...valid, warsReceived: 123 }), null);
   assert.equal(parseStats({ ...valid, byDay: [{ day: "05/10/2026", payments: 1, warsReceived: "1" }] }), null);
   assert.equal(parseStats({ ...valid, byDay: [{ day: "2026-10-05", payments: "2", warsReceived: "1" }] }), null);
+  // chainId es opcional: número o string numérico; otra cosa rompe la forma.
+  assert.equal(parseStats({ ...valid, chainId: 42220 })?.chainId, 42220);
+  assert.equal(parseStats({ ...valid, chainId: "11142220" })?.chainId, 11142220);
+  assert.equal(parseStats({ ...valid, chainId: "celo" }), null);
+  assert.equal(parseStats({ ...valid, chainId: null }), null);
 });
 
 test("formatPesos: wei a pesos es-AR con bigint, sin float", () => {
@@ -57,8 +62,12 @@ test("fetchStats: indexer caído, 500, formato inesperado o sin env → ok:false
   assert.equal((await fetchStats({}, weird)).ok, false);
 });
 
-test("networkName: 42220 mainnet (default), 11142220 Sepolia", () => {
-  assert.equal(networkName({ TILDAI_CHAIN_ID: "11142220" }), "Celo Sepolia");
-  assert.equal(networkName({ TILDAI_CHAIN_ID: "42220" }), "Celo mainnet");
-  assert.equal(networkName({}), "Celo mainnet");
+test("networkName: sin default; vacío o desconocido → 'red no configurada'", () => {
+  assert.equal(networkName(42220), "Celo mainnet");
+  assert.equal(networkName("42220"), "Celo mainnet");
+  assert.equal(networkName(11142220), "Celo Sepolia");
+  assert.equal(networkName("11142220"), "Celo Sepolia");
+  assert.equal(networkName(undefined), "red no configurada");
+  assert.equal(networkName(""), "red no configurada");
+  assert.equal(networkName("1"), "red no configurada");
 });

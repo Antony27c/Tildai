@@ -11,6 +11,7 @@
 }
 
 .printBtn {
+  min-height: 44px;
   font-family: var(--font-sans, system-ui, sans-serif);
   font-size: 1rem;
   padding: var(--s2, 8px) var(--s5, 32px);
@@ -22,6 +23,7 @@
 }
 
 .poster {
+  box-sizing: border-box;
   width: 100%;
   max-width: 420px;
   display: grid;

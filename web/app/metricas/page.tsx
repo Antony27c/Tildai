@@ -8,7 +8,6 @@ export const dynamic = "force-dynamic";
 const enteros = new Intl.NumberFormat("es-AR");
 
 export default async function MetricasPage() {
-  const red = networkName();
   const r = await fetchStats();
   if (!r.ok) {
     console.error(JSON.stringify({ event: "stats_failed", reason: r.reason }));
@@ -16,11 +15,12 @@ export default async function MetricasPage() {
       <main className={styles.main}>
         <h1 className={styles.title}>Métricas de Tildai</h1>
         <p className={styles.error}>No pudimos cargar las métricas. Probá de nuevo en unos minutos.</p>
-        <Footer red={red} />
+        <Footer red={networkName(process.env.TILDAI_CHAIN_ID)} />
       </main>
     );
   }
   const s = r.stats;
+  const red = networkName(s.chainId ?? process.env.TILDAI_CHAIN_ID);
   const max = s.byDay.reduce((m, d) => (BigInt(d.warsReceived) > m ? BigInt(d.warsReceived) : m), 0n);
   const gen = new Date(s.generatedAt);
   const actualizado = Number.isNaN(gen.getTime()) ? s.generatedAt
@@ -28,20 +28,20 @@ export default async function MetricasPage() {
   return (
     <main className={styles.main}>
       <h1 className={styles.title}>Métricas de Tildai</h1>
-      <p className={styles.sub}>Cada cobro, tildado. Datos reales en {red}.</p>
+      <p className={styles.sub}>Cada cobro, tildado. Datos del indexer · {red}.</p>
       <section className={styles.grid}>
+        <Card label="Total cobrado" value={formatPesos(s.warsReceived)} className={styles.total} />
         <Card label="Comercios" value={enteros.format(s.vaults)} />
         <Card label="Activos últimos 7 días" value={enteros.format(s.activeVaults7d)} />
         <Card label="Pagos confirmados" value={enteros.format(s.payments)} />
         <Card label="Ventas cobradas" value={enteros.format(s.salesCobradas)} />
-        <Card label="Total cobrado" value={formatPesos(s.warsReceived)} />
       </section>
       <section>
         <h2 className={styles.h2}>Cobrado por día · últimos 14 días</h2>
         <div className={styles.chart} role="img" aria-label="Cobrado en pesos por día, últimos 14 días">
           {s.byDay.map((d) => {
             const v = BigInt(d.warsReceived);
-            const pct = max > 0n ? Number((v * 100n) / max) : 0;
+            const pct = v > 0n ? Math.max(2, Number((v * 100n) / max)) : 0;
             return (
               <div key={d.day} className={styles.col} title={`${d.day}: ${formatPesos(d.warsReceived)} · ${d.payments} pagos`}>
                 <div className={styles.barBox}>
@@ -66,9 +66,9 @@ export default async function MetricasPage() {
   );
 }
 
-function Card({ label, value }: { label: string; value: string }) {
+function Card({ label, value, className }: { label: string; value: string; className?: string }) {
   return (
-    <div className={styles.card}>
+    <div className={`${styles.card}${className ? ` ${className}` : ""}`}>
       <div className={styles.label}>{label}</div>
       <div className={styles.value}>{value}</div>
     </div>

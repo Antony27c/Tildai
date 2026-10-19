@@ -39,9 +39,19 @@
 
 .value {
   margin-top: var(--s1, 4px);
-  font-family: var(--font-mono, monospace);
+  font-family: var(--font-sans, system-ui, sans-serif);
+  font-variant-numeric: tabular-nums;
   font-size: 1.4rem;
   font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.total {
+  grid-column: 1 / -1;
+}
+
+.total .value {
+  font-size: clamp(1.6rem, 7vw, 2.4rem);
 }
 
 .h2 {
@@ -83,7 +93,7 @@
 
 .day {
   margin-top: var(--s1, 4px);
-  font-size: 0.65rem;
+  font-size: 0.75rem;
   text-align: center;
   color: var(--muted, #555);
 }

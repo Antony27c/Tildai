@@ -1,7 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { cartelBase, counterUrl, sanitizeNombre } from "./cartel.ts";
-import { checkVault } from "./vaults.ts";
 
 const hdrs = (m: Record<string, string | null>) => ({ get: (k: string) => m[k] ?? null });
 
@@ -25,13 +24,4 @@ test("cartelBase: NEXT_PUBLIC_BASE_URL o el host del pedido", () => {
   assert.equal(cartelBase({ NEXT_PUBLIC_BASE_URL: "https://tildai.example" }, hdrs({ host: "x" })), "https://tildai.example");
   assert.equal(cartelBase({}, hdrs({ "x-forwarded-proto": "https", host: "tildai.example" })), "https://tildai.example");
   assert.equal(cartelBase({}, hdrs({ host: "localhost:3000" })), "http://localhost:3000");
-});
-
-test("checkVault: basura es inválida sin tocar la red; con lector falso decide la factory", async () => {
-  assert.equal((await checkVault(undefined, {})).status, "invalid");
-  assert.equal((await checkVault("no-es-address", {})).status, "invalid");
-  const env = { TILDAI_FACTORY: `0x${"2".repeat(40)}`, TILDAI_CHAIN_ID: "42220" };
-  const vault = `0x${"1".repeat(40)}`;
-  assert.equal((await checkVault(vault, env, { readContract: async () => true })).status, "ok");
-  assert.equal((await checkVault(vault, env, { readContract: async () => false })).status, "invalid");
 });

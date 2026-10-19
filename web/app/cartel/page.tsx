@@ -34,7 +34,7 @@ export default async function CartelPage({ searchParams }: { searchParams: Promi
           <li>Poné el monto de tu compra.</li>
           <li>Pagá con pesos o con tu wallet.</li>
         </ol>
-        <p className={styles.foot}>Pagás en pesos, sin wallet ni gas.</p>
+        <p className={styles.foot}>Sin pagar gas.</p>
       </section>
     </main>
   );
