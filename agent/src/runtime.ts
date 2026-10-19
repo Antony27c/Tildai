@@ -2,7 +2,9 @@ import { createPublicClient, http, type Address, type Hex } from "viem";
 import { celo, celoSepolia } from "viem/chains";
 
 import { agentClients } from "./chain.ts";
+import { EventCursor } from "./avisos.ts";
 import { ChainVault, type Balances } from "./chainVault.ts";
+import { indexerClient, IndexerVault, type Indexer } from "./indexerClient.ts";
 import { SalesBook } from "./sales.ts";
 import { FakeVault, type Vault } from "./vault.ts";
 import { ChatVaultRegistry, CreadorVault } from "./alta.ts";
@@ -44,13 +46,35 @@ export function vaultDelChat(ctx: ToolCtx): { address: Address; fromBlock: bigin
 let reader: ReturnType<typeof createPublicClient> | undefined;
 const publicReader = () => (reader ??= createPublicClient({ chain: network === "celo" ? celo : celoSepolia, transport: http() }));
 
+let idx: Indexer | null | undefined;
+/** The payments indexer: source of truth for sales when TILDAI_INDEXER_URL + TILDAI_INDEXER_TOKEN are set. */
+export function indexer(): Indexer | undefined {
+  if (idx === undefined) {
+    const baseUrl = process.env.TILDAI_INDEXER_URL;
+    const token = process.env.TILDAI_INDEXER_TOKEN;
+    if ((baseUrl && !token) || (!baseUrl && token)) {
+      console.error("[tildai] TILDAI_INDEXER_URL y TILDAI_INDEXER_TOKEN van juntas: falta una, indexer deshabilitado");
+    }
+    idx = baseUrl && token ? indexerClient({ baseUrl, token }) : null;
+  }
+  return idx ?? undefined;
+}
+
+let events: EventCursor | undefined;
+export function eventCursor() {
+  return (events ??= EventCursor.load(process.env.TILDAI_EVENTS_FILE ?? "data/eventos.json"));
+}
+
 const books = new Map<string, { book: SalesBook; balances: () => Promise<Balances> }>();
 /** Book and onchain balances for one vault, cached by address (used by tools and by the daily close). */
 export function datosDelVault(v: { address: Address; fromBlock: bigint }) {
   let e = books.get(v.address);
   if (!e) {
     const cv = new ChainVault({ address: v.address, reader: publicReader(), fromBlock: v.fromBlock });
-    books.set(v.address, (e = { book: new SalesBook(cv), balances: () => cv.balances() }));
+    // With an indexer configured it is the source of truth for sales; onchain reads stay as verification.
+    const idx = indexer();
+    const src: Vault = idx ? new IndexerVault(v.address, idx) : cv;
+    books.set(v.address, (e = { book: new SalesBook(src), balances: () => cv.balances() }));
   }
   return e;
 }
@@ -69,8 +93,8 @@ export function opsDelChat(ctx: ToolCtx): VaultOps {
   return opsDelVault(vaultDelChat(ctx).address);
 }
 
-/** Vaults to close at 21:00 ART: every chat→vault in the registry, plus the env vault of the owner chat if it isn't registered. */
-export function vaultsACerrar(): { chatId: string; vault: { address: Address; fromBlock: bigint } }[] {
+/** Every chat→vault in the registry, plus the env vault of the owner chat if it isn't registered: used by the daily close and the sale notifications. */
+export function vaultsConChat(): { chatId: string; vault: { address: Address; fromBlock: bigint } }[] {
   const jobs = chatRegistry().conVault().map((e) => ({ chatId: e.chatId, vault: { address: e.vault, fromBlock: e.fromBlock } }));
   const owner = process.env.TILDAI_OWNER_CHAT_ID;
   if (vaultAddress && owner && !jobs.some((j) => j.chatId === owner || j.vault.address === vaultAddress)) {

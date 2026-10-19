@@ -22,6 +22,12 @@ Agente de caja con tools `crear_cobro`, `ventas_hoy`, `aviso_pago` y un schedule
 5. Probá: "cobrame 8500", "¿me pagaron?", "¿cuánto vendí hoy?". (con el vault falso no entran pagos; eso se cubre en los tests).
 6. Cierre de caja: con `npm run dev` corriendo, `curl -X POST http://localhost:2000/eve/v1/dev/schedules/cierre_caja`.
 
+## Indexer y avisos de venta
+
+Con `TILDAI_INDEXER_URL` + `TILDAI_INDEXER_TOKEN` el indexer es la fuente de verdad de las ventas: `ventas_hoy` y el cierre leen `GET /payments` (sin rango para reconciliar pendientes; con rango por día argentino para los totales que mueven plata). Si el indexer está caído o responde 503 (pagos sin timestamp), el cierre avisa "pendiente" y **no aparta nada**. Sin indexer, la lectura onchain queda como verificación.
+
+Un schedule por minuto (`avisos_ventas`) pide `GET /events?since=<cursor>` y manda a cada chat `Entró una venta: $X ✓` o `Te llegó un pago de $X sin venta asociada`. El evento no trae el vault: se resuelve cruzando `paymentId` con `/payments` de cada vault registrado. El cursor y los `paymentId` ya avisados viven en `TILDAI_EVENTS_FILE` (JSON atómico, default `data/eventos.json`) y solo avanzan después de un envío exitoso, así un reinicio o un fallo de Telegram no duplica ni saltea; un `pago_sin_venta` que después cobra una venta (`venta_cobrada` con el mismo `paymentId`) avisa una sola vez.
+
 ## Tests
 
 `npm test` (`node --test`, datos falsos).

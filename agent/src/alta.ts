@@ -1,9 +1,7 @@
-import { mkdirSync, readFileSync } from "node:fs";
-import { open, rename } from "node:fs/promises";
-import { dirname } from "node:path";
 import { isAddress, parseEventLogs, type Address, type Hex } from "viem";
 
 import { factoryAbi, type ChainReader } from "./chainVault.ts";
+import { escribirJsonAtomico, leerJson } from "./jsonFile.ts";
 import { formatPesos } from "./money.ts";
 import { dayIndex } from "./sales.ts";
 import type { OpsReader, OpsWallet } from "./vaultOps.ts";
@@ -37,13 +35,9 @@ export class ChatVaultRegistry {
   static load(file: string | undefined) {
     const r = new ChatVaultRegistry(file);
     if (file) {
-      try {
-        const d = JSON.parse(readFileSync(file, "utf8"));
-        for (const [k, v] of Object.entries(d.chats ?? {})) r.map.set(k, v as ChatEntry);
-        if (typeof d.altas?.dia === "number" && typeof d.altas?.count === "number") r.altas = d.altas;
-      } catch (e) {
-        if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw new Error(`El archivo de comercios está corrupto (${file}): ${(e as Error).message}`);
-      }
+      const d = leerJson(file, "de comercios");
+      for (const [k, v] of Object.entries(d?.chats ?? {})) r.map.set(k, v as ChatEntry);
+      if (typeof d?.altas?.dia === "number" && typeof d?.altas?.count === "number") r.altas = d.altas;
     }
     return r;
   }
@@ -68,18 +62,7 @@ export class ChatVaultRegistry {
     const now = opts.now ?? Date.now();
     if (opts.gastarAlta) this.altas = { dia: dayIndex(now), count: this.altasDelDia(now) + 1 };
     this.map.set(chatId, e);
-    if (this.file) {
-      mkdirSync(dirname(this.file), { recursive: true });
-      const tmp = `${this.file}.tmp`;
-      const f = await open(tmp, "w");
-      try {
-        await f.writeFile(JSON.stringify({ version: 1, altas: this.altas, chats: Object.fromEntries(this.map) }, null, 2), "utf8");
-        await f.sync();
-      } finally {
-        await f.close();
-      }
-      await rename(tmp, this.file);
-    }
+    if (this.file) await escribirJsonAtomico(this.file, { version: 1, altas: this.altas, chats: Object.fromEntries(this.map) });
   }
 }
 

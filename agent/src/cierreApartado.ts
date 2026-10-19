@@ -1,5 +1,6 @@
 import type { Address } from "viem";
 
+import { ventasDelDia, type Indexer } from "./indexerClient.ts";
 import { formatPesos } from "./money.ts";
 import { cierreCaja, diaISO, type SalesBook } from "./sales.ts";
 import type { BucketName, OpRecord, VaultOps } from "./vaultOps.ts";
@@ -87,17 +88,32 @@ export async function cierreDeTodos(a: {
   ops: (address: Address) => Pick<VaultOps, "apartar">;
   env: { savings?: string; taxes?: string };
   send: (chatId: string, texto: string) => unknown;
+  /** With an indexer, the ranged /payments call gates the close: a failure or 503 means incomplete data, never a partial amount to move money with. */
+  indexer?: Indexer;
 }): Promise<void> {
   for (const j of a.jobs) {
     try {
       const { book, balances } = a.datos(j.vault);
-      const { resumen } = await cierreCaja(book);
+      if (a.indexer) {
+        try {
+          await ventasDelDia(a.indexer, j.vault.address, book.today());
+        } catch (err) {
+          console.error(`[tildai] ALERTA cierre del chat ${j.chatId}: indexer sin datos completos`, err);
+          await a.send(j.chatId, "Avisale al dueño que el cierre de hoy quedó pendiente: el indexer todavía no tiene los datos completos (o está caído) y reintenta solo. No aparté nada.");
+          continue;
+        }
+      }
+      const { resumen, verificado } = await cierreCaja(book);
       let apartado: string;
-      try {
-        apartado = (await apartadoCierre({ book, ops: a.ops(j.vault.address), balances, env: a.env })).texto;
-      } catch (err) {
-        console.error(`[tildai] ALERTA cierre: falló el apartado del chat ${j.chatId}`, err);
-        apartado = `No aparté nada: ${(err as Error).message}`;
+      if (!verificado) {
+        apartado = "No aparté nada: las ventas de hoy todavía no se pudieron verificar.";
+      } else {
+        try {
+          apartado = (await apartadoCierre({ book, ops: a.ops(j.vault.address), balances, env: a.env })).texto;
+        } catch (err) {
+          console.error(`[tildai] ALERTA cierre: falló el apartado del chat ${j.chatId}`, err);
+          apartado = `No aparté nada: ${(err as Error).message}`;
+        }
       }
       await a.send(j.chatId, `Enviale al dueño este resumen tal cual, sin cambiar cifras:\n\n${resumen}\n\nApartado:\n${apartado}`);
     } catch (err) {
