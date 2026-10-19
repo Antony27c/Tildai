@@ -39,11 +39,19 @@ export class Store {
   vaultCursor: bigint | null = null; // próximo bloque a leer de VaultCreated
 
   addSale(s: { id: string; vault: string; amount: bigint; createdBlock: bigint }): Sale {
-    if (this.sales.has(s.id)) throw new Error(`venta duplicada: ${s.id}`);
-    if (s.amount <= 0n) throw new Error('el monto debe ser positivo');
+    if (this.sales.has(s.id)) throw new IndexerError('conflict', `venta duplicada: ${s.id}`);
+    if (s.amount <= 0n) throw new IndexerError('invalid', 'el monto debe ser positivo');
     const sale: Sale = { ...s, vault: s.vault.toLowerCase(), status: 'pendiente' };
     this.sales.set(s.id, sale);
     return sale;
+  }
+}
+
+export class IndexerError extends Error {
+  code: 'not_found' | 'invalid' | 'conflict';
+  constructor(code: 'not_found' | 'invalid' | 'conflict', message: string) {
+    super(message);
+    this.code = code;
   }
 }
 
@@ -192,12 +200,12 @@ export function createIndexer(o: IndexerOpts) {
   // shortcut: una tx equivocada deja la venta pendiente para siempre sin aviso; agregar vencimiento y alerta al dueño.
   async function markPaidByTx(saleId: string, txHash: string): Promise<Sale['status']> {
     const s = store.sales.get(saleId);
-    if (!s) throw new Error(`venta inexistente: ${saleId}`);
-    if (!/^0x[0-9a-fA-F]{64}$/.test(txHash)) throw new Error(`hash de tx inválido: ${txHash}`);
+    if (!s) throw new IndexerError('not_found', `venta inexistente: ${saleId}`);
+    if (!/^0x[0-9a-fA-F]{64}$/.test(txHash)) throw new IndexerError('invalid', `hash de tx inválido: ${txHash}`);
     const tx = txHash.toLowerCase();
     if (s.status === 'cobrada') {
       if (store.payments.get(s.paymentId!)?.txHash === tx) return 'cobrada';
-      throw new Error(`la venta ${saleId} ya está cobrada con otro pago`);
+      throw new IndexerError('conflict', `la venta ${saleId} ya está cobrada con otro pago`);
     }
     s.txHash = tx;
     settleByTx(store, s);
