@@ -41,8 +41,8 @@ export class SalesBook {
     for (const t of transfers) {
       if (!t.confirmed || this.claimed.has(t.id)) continue;
       this.claimed.add(t.id);
-      // shortcut: a Transfer carries no memo, so match the oldest pending sale with the same amount; an unmatched one is a QR-fijo sale.
-      let sale = this.sales.find((s) => s.status === "pendiente" && s.amount === t.amount);
+      // shortcut: a Transfer carries no memo, so match the oldest pending sale with the same amount created at or before the Transfer; an unmatched one is a QR-fijo sale.
+      let sale = this.sales.find((s) => s.status === "pendiente" && s.amount === t.amount && t.timestamp >= s.createdAt);
       if (!sale) {
         sale = { id: this.sales.length + 1, amount: t.amount, status: "pendiente", createdAt: t.timestamp, notified: false };
         this.sales.push(sale);

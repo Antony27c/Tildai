@@ -108,3 +108,13 @@ test("cierre de caja: un día cuenta en hora argentina (23:30 ART sigue siendo h
   const r = await cierreCaja(new SalesBook(vault, () => Date.UTC(2026, 9, 21, 2, 45)));
   assert.equal(r.total, 700);
 });
+
+test("un Transfer anterior a la venta no la cobra: crea su propia venta", async () => {
+  const { book, vault } = setup();
+  vault.deposit(pesosToWei(500), { timestamp: NOW - 3_600_000 });
+  const venta = crearCobro(book, { monto: 500 }, "x");
+  await book.reconcile();
+  assert.equal(book.sales.find((s) => s.id === venta.ventaId)!.status, "pendiente");
+  assert.equal(book.sales.length, 2);
+  assert.equal(book.sales[1].status, "cobrada");
+});
