@@ -3,10 +3,11 @@ import { isAddress } from "viem";
 import { QRCodeSVG } from "qrcode.react";
 import AmountForm from "./AmountForm.tsx";
 import { parseAmount } from "../lib/ripio.ts";
+import { isAllowedVault } from "../lib/vaults.ts";
 
 export default async function Page({ searchParams }: { searchParams: Promise<{ vault?: string; amount?: string }> }) {
   const { vault, amount } = await searchParams;
-  if (!vault || !isAddress(vault)) {
+  if (!isAllowedVault(vault)) {
     return <main style={{ padding: 24 }}>Este link de cobro no es válido. Pedile al comercio que te pase el QR de nuevo.</main>;
   }
   const h = await headers();

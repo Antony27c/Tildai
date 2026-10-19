@@ -17,9 +17,15 @@ test("rechaza vault o monto inválidos", () => {
   assert.throws(() => buildRipioLink(NaN, vault));
 });
 
-test("parseAmount acepta coma y descarta basura", () => {
-  assert.equal(parseAmount("8500,50"), 8500.5);
-  assert.equal(parseAmount("abc"), null);
-  assert.equal(parseAmount("-5"), null);
-  assert.equal(parseAmount(undefined), null);
+test("parseAmount sigue el formato argentino", () => {
+  assert.equal(parseAmount("8.500"), 8500);
+  assert.equal(parseAmount("8.500,50"), 8500.5);
+  assert.equal(parseAmount("1.234.567"), 1234567);
+  assert.equal(parseAmount("8500"), 8500);
+  assert.equal(parseAmount("8,5"), 8.5);
+  assert.equal(parseAmount("8.5"), 8.5);
+});
+
+test("parseAmount descarta basura", () => {
+  for (const x of ["abc", "-5", "", "8.5.5", "1e3", "8,5,5", "0", undefined]) assert.equal(parseAmount(x), null, String(x));
 });
