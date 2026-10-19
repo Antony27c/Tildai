@@ -26,11 +26,11 @@ También pendiente: apartado de ahorro e impuestos, dolarización, x402 real (Pe
 ## Tareas en curso (18/10, todas parten de `origin/Antony27c/Tildai`)
 | Agente | Hecho y revisado | En curso |
 |---|---|---|
-| `devin-agent` | Vault real, `apartar`/`retirar`, gas en USD₮, apartado automático en el cierre | Tool `dolarizar` con `cotizarFirme` y `vault.swap` |
-| `devin-indexer` | Factory, tramos, persistencia JSON, `markPaidByTx` | Servicio HTTP (contrato fijo: `POST /sales`, `POST /sales/:id/tx`, `GET /sales/:id`, `GET /health`, Bearer `TILDAI_INDEXER_TOKEN`) |
-| `devin-web` | `isVault`, x402 con Permit2 (solo mainnet), parámetro `sale` | Avisar al indexer después del settle y mostrarle el estado al cliente |
-| `gemini-textile` | `cotizarFirme` con la forma real de la API | P&L de la dolarización (track Textile) |
-| Coordinador | Script ERC-8004 probado en Sepolia (agentId 626) | Registro en mainnet y deploy a mainnet (con OK del dueño y gas en USD₮) |
+| `devin-agent` | Vault real, `apartar`/`retirar`/`dolarizar`, gas en USD₮, apartado en el cierre | Alta con `/start`: crear el vault desde la factory |
+| `devin-indexer` | Factory, persistencia, `markPaidByTx`, servicio HTTP (`POST /sales`, `POST /sales/:id/tx`, `GET /sales/:id`, `GET /health`, Bearer `TILDAI_INDEXER_TOKEN`) | `GET /sales`, `GET /payments` (cobros sin venta, QR fijo), `GET /events` con cursor |
+| `devin-web` | `isVault`, x402 con Permit2 (solo mainnet), aviso al indexer y estado del pago | Botón "Pagar con wARS" (lado comprador de x402 con wallet inyectada) |
+| `gemini-textile` | `cotizarFirme` y P&L (`fx/pnl.ts`, lo cerró el coordinador) | **Sin cuota de Gemini hasta el ~25/10.** No asignar tareas |
+| Coordinador | Script ERC-8004 probado en Sepolia (agentId 626); `deploy-mainnet.ts` con dry run OK | Registro y deploy en mainnet: **frenado** hasta que el dueño fondee la wallet del agente con USD₮ |
 
 ## Cómo se trabaja
 - **Un worktree por agente**, carpeta `C:/Users/pansi/orca/workspaces/BuilderSession/<nombre>`, rama `Antony27c/<nombre>`: `devin-agent`, `devin-web`, `devin-indexer`, `gemini-textile`, y `Tildai` (coordinador). Los viejos `copepod`, `triggerfish`, `rosefish`, `hind` y `lookdown` parten del historial anterior a la reescritura: no los uses sin moverlos al `main` nuevo.
