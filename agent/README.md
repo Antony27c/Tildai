@@ -36,3 +36,7 @@ Agente de caja con tools `crear_cobro`, `ventas_hoy`, `aviso_pago` y un schedule
 ## Vault real (Celo)
 
 Variables en `.env`: `TILDAI_VAULT`, `TILDAI_FROM_BLOCK` (bloque de creación del vault), `TILDAI_NETWORK` (`celo` por defecto, o `celoSepolia`) y `AGENT_PRIVATE_KEY` (solo para `apartar`/`retirar`). Las escrituras salen únicamente por `agentClients()` (con attribution tag) y llevan un `opId` = keccak256 del id de negocio; si el vault ya lo usó, devuelven `ya_ejecutada` sin enviar nada. Los tests de escritura usan clientes falsos; el de Celo Sepolia es de solo lectura (`TILDAI_SKIP_NETWORK=1` lo saltea sin red).
+
+## Apartado en el cierre de caja
+
+Después del resumen de las 21 hs el agente aparta ahorro e impuestos sobre lo vendido y confirmado ese día argentino (nunca más que el operativo del vault). Porcentajes por `.env`: `TILDAI_SAVINGS_PCT` y `TILDAI_TAXES_PCT` (0 a 100, suma <= 100); si faltan o son inválidos no aparta y lo dice en el mensaje. Los ids `cierre:<fecha AR>:ahorro|impuestos` evitan apartar dos veces si el cierre se repite. En mainnet el gas se paga en USD₮ (`feeCurrency` con el adapter oficial).
