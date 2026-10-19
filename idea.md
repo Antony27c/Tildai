@@ -113,6 +113,14 @@ El agente decide y actúa solo, siempre dentro de los límites que fija el contr
 - **ERC-8004:** docs.celo.org/build-on-celo/build-with-ai/8004. Explorador: 8004scan.io
 - **Herramientas:** `npx skills add celo-org/celopedia-skills`, `npx loopshouse add agents-on-open-rails`, `npx eve@latest init tildai`.
 
+### Requisitos del vault (a resolver antes de escribir los contratos)
+Salen de la revisión de Textile FX (`docs/textile-fx.md`) y de la revisión de código del 18/10.
+- **Quién firma el swap.** Los fondos están en el `TildaiVault`, que es un contrato. La orden de Textile (UniswapX con Permit2) necesita la firma del dueño de los fondos; un contrato solo puede firmar si implementa EIP-1271. El vault debe poder ejecutar el swap él mismo, solo hacia Textile.
+- **Tasa mínima onchain.** El contrato rechaza cualquier swap por debajo de un piso de tasa (wARS por USD₮) y por encima de un tope por operación y por día. Si la cotización falla o no cumple el piso, no se convierte.
+- **Textile tiene muy poco volumen.** `USDT_WARS`: 6,39 USD₮ operados en 24 h y `bid` en 0. Hay cotización pero no historial de llenados: probar primero con un monto chico en mainnet. Volver de USD₮ a wARS no tiene comprador hoy.
+- **Conciliación de pagos.** Un pago solo cobra una venta creada antes que él (bloque o timestamp de creación de la venta). Lo cumplen hoy `indexer/` y `agent/`; el contrato debería emitir un evento con el id de la venta para dejar de depender del monto exacto.
+- **Vaults permitidos.** La página de cobro solo arma links para vaults registrados (`TILDAI_VAULTS` hoy, `TildaiFactory` cuando exista).
+
 ---
 
 ## 6. Flujos del MVP
