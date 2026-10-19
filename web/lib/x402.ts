@@ -3,13 +3,13 @@ import type { FacilitatorClient } from "@x402/core/server";
 import type { PaymentPayload, PaymentRequirements } from "@x402/core/types";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
 import { getAddress, isAddress, parseUnits } from "viem";
+import { NETWORK, WARS } from "./wars.ts";
 
 export type X402Result =
   | { status: "paid"; txHash: string; payer?: string }
   | { status: "rejected"; reason: string };
 
-export const NETWORK = "eip155:42220";
-export const WARS = getAddress("0x0DC4F92879B7670e5f4e4e6e3c801D229129D90D");
+export { NETWORK, WARS };
 export const FACILITATOR_URL = "https://api.x402.celo.org";
 export const GAS_SPONSORING = {
   eip2612GasSponsoring: { info: { description: "The facilitator sponsors the EIP-2612 permit to Permit2.", version: "1" } },
