@@ -89,7 +89,7 @@ export function stats(store: Store, now = Date.now()) {
       paymentsWithoutTimestamp++;
       continue;
     }
-    if (p.timestamp >= now - 7 * DAY) active.add(p.vault);
+    if (arDay(p.timestamp) >= arDay(now - 6 * DAY)) active.add(p.vault); // 7 días calendario AR, como byDay
     const d = days.get(arDay(p.timestamp));
     if (d) {
       d.payments++;
@@ -160,7 +160,6 @@ export function createApp(o: { indexer: Indexer; store: Store; token: string; on
       const vault = vaultParam(url);
       const [since, until] = range(url);
       const list = [...store.payments.values()].filter((p) => p.vault === vault);
-      // Si falta algún timestamp el rango no es confiable: 503 para que el agente reintente, nunca una respuesta a medias.
       // Con rango y pagos sin timestamp la respuesta no es confiable: 503 para reintentar. Sin rango, se incluyen con timestamp null.
       if ((url.searchParams.has('since') || url.searchParams.has('until')) && list.some((p) => p.timestamp == null)) {
         throw new HttpError(503, 'hay pagos sin timestamp todavía, reintenta');
