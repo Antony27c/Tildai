@@ -26,10 +26,10 @@ También pendiente: apartado de ahorro e impuestos, dolarización, x402 real (Pe
 ## Tareas en curso (18/10, todas parten de `origin/Antony27c/Tildai`)
 | Agente | Hecho y revisado | En curso |
 |---|---|---|
-| `devin-agent` | Vault real (`ChainVault`, `VaultOps` con `opId`), tools `apartar` y `retirar` | `feeCurrency` USD₮ en mainnet; apartado automático en el cierre de caja |
-| `devin-indexer` | Vaults desde `VaultCreated`, tramos, reintentos y confirmaciones | Persistencia en JSON; conciliación por hash de tx (x402) |
-| `devin-web` | `isVault` onchain; x402 con Permit2 y `/api/pay` | Versiones exactas de `@x402/*`; rechazar x402 fuera de mainnet; verificar header de API key y `eip2612GasSponsoring`; parámetro `sale` |
-| `gemini-textile` | `cotizarFirme` (primera versión) | Leer `data.quote` (la forma real de la API), una sola firma, `maxRate` entero, `previewRate` obligatorio |
+| `devin-agent` | Vault real, `apartar`/`retirar`, gas en USD₮, apartado automático en el cierre | Tool `dolarizar` con `cotizarFirme` y `vault.swap` |
+| `devin-indexer` | Factory, tramos, persistencia JSON, `markPaidByTx` | Servicio HTTP (contrato fijo: `POST /sales`, `POST /sales/:id/tx`, `GET /sales/:id`, `GET /health`, Bearer `TILDAI_INDEXER_TOKEN`) |
+| `devin-web` | `isVault`, x402 con Permit2 (solo mainnet), parámetro `sale` | Avisar al indexer después del settle y mostrarle el estado al cliente |
+| `gemini-textile` | `cotizarFirme` con la forma real de la API | P&L de la dolarización (track Textile) |
 | Coordinador | Script ERC-8004 probado en Sepolia (agentId 626) | Registro en mainnet y deploy a mainnet (con OK del dueño y gas en USD₮) |
 
 ## Cómo se trabaja
