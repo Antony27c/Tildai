@@ -19,7 +19,7 @@ También pendiente: apartado de ahorro e impuestos, dolarización, x402 real (Pe
 ## Hackathon (Loops House)
 - Entrega: **lunes 9/11/2026, 06:00 hora argentina**. Solo cuenta Celo mainnet.
 - Cuenta de Loops: `antoniochocobar.sam@gmail.com`, ya inscripta. CLI `loops` instalada global. **Attribution tag: `celo_c376b2fd04bc`** (va en todas las tx, desde la primera).
-- Todavía **no hay proyecto creado** en Loops, ni wallet del agente, ni ERC-8004. El dueño debe: correr `cd agent && npm run wallet` (la clave queda en `agent/.env`, nunca se comparte), fondear la wallet con gas y pasar solo la dirección pública.
+- Todavía **no hay proyecto creado** en Loops ni ERC-8004. Wallet del agente creada el 18/10: `0x2B7c25FedB6d09e149fedc1ffE35529b1cab1f65` (la anterior, `0xdc93...2f9b`, se descartó porque su clave quedó expuesta: no usarla) (la clave está solo en `agent/.env` del worktree `Tildai`). Falta fondearla con gas.
 - Para la entrega: `loops project fields --event agents-on-open-rails`, luego `project create` **sin `--confirm`** (es un borrador), mostrárselo al dueño y confirmar solo con su sí explícito. Campo obligatorio: `agent-wallet`.
 - Las skills de Loops House están sin commit en la carpeta del Desktop (`.agents/` y `.claude/skills/loops-agents-on-open-rails`).
 

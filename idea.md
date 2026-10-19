@@ -169,7 +169,7 @@ El agente decide y actúa solo, siempre dentro de los límites que fija el contr
 - [ ] Inscribirse en Loops House (loops.house/agents-on-open-rails, "Enroll now") y obtener el **attribution tag**
 - [ ] Crear la org/repo público en GitHub (`tildai-app/tildai`) y vincularlo a la entry
 - [ ] Instalar skills: `npx loopshouse add agents-on-open-rails` y `npx skills add celo-org/celopedia-skills`
-- [ ] Crear la wallet del agente (clave en `.env`, nunca en el repo) y agregarla a la entry
+- [x] Crear la wallet del agente (clave en `.env`, nunca en el repo): `0x2B7c25FedB6d09e149fedc1ffE35529b1cab1f65`. Falta agregarla a la entry
 - [ ] Registrar la identidad **ERC-8004** del agente desde su wallet
 - [ ] Fondear: wARS (Ripio), USD₮ para gas (faucet de Google Cloud Web3 con Self)
 - [ ] Sacar la API key del facilitador en x402.celo.org
@@ -180,9 +180,9 @@ El agente decide y actúa solo, siempre dentro de los límites que fija el contr
 
 ### Semana 1 - Cobro onchain (lun 20 al dom 26/10)
 - [ ] Scaffold del monorepo: `contracts/`, `agent/` (eve), `web/` (Next.js)
-- [ ] Integrar el SDK de attribution tags en el cliente de wallet (antes de cualquier tx)
+- [x] Integrar el SDK de attribution tags en el cliente de wallet (antes de cualquier tx): `agent/src/chain.ts`
 - [x] `TildaiVault` + `TildaiFactory`: depósitos, reglas (% ahorro/impuestos), destinos permitidos, tope diario y retiro del dueño (`contracts/`, `forge test`; con fork de Celo, `FORK=1 forge test --match-contract Fork` en bash)
-- [ ] Tests de contratos y deploy en Sepolia, luego **mainnet + verificación**
+- [ ] Tests de contratos y deploy en Sepolia (hecho, `contracts/deployments/celo-sepolia.json`), luego **mainnet + verificación**
 - [ ] Página de cobro con x402 en wARS (Permit2), con monto dinámico y QR fijo
 - [ ] Botón "Pagar con pesos" con on-ramp de Ripio hacia el vault
 - [ ] Indexador de eventos `Transfer` de wARS hacia los vaults

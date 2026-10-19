@@ -2,26 +2,10 @@
 pragma solidity 0.8.28;
 
 import {Test} from "forge-std/Test.sol";
-import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {TildaiVault} from "../src/TildaiVault.sol";
 import {TildaiFactory} from "../src/TildaiFactory.sol";
-
-contract MockToken is ERC20 {
-    uint8 private immutable dec;
-
-    constructor(string memory name, uint8 dec_) ERC20(name, name) {
-        dec = dec_;
-    }
-
-    function decimals() public view override returns (uint8) {
-        return dec;
-    }
-
-    function mint(address to, uint256 amount) external {
-        _mint(to, amount);
-    }
-}
+import {MockToken} from "./MockToken.sol";
 
 /// Behaves like the Textile settlement: pulls the taker side from msg.sender, pays the maker side to it.
 contract MockTextile {

@@ -28,7 +28,7 @@ Leé este archivo antes de trabajar en el proyecto. Para el detalle completo (id
 
 ## Reglas obligatorias (no negociables)
 1. **Solo Celo mainnet cuenta** (chain `42220`). Para pruebas se puede usar Celo Sepolia (`11142220`), pero el entregable va en mainnet.
-2. **Attribution tag ERC-8021 en TODAS las tx** que envíe el agente o el frontend, **desde la primera**. No se puede agregar retroactivamente. Va en el cliente de wallet (viem), no en el contrato. SDK: github.com/celo-org/attribution-tags
+2. **Attribution tag ERC-8021 en TODAS las tx** que envíe el agente o el frontend, **desde la primera**. No se puede agregar retroactivamente. Va en el cliente de wallet (viem), no en el contrato. SDK: github.com/celo-org/attribution-tags. Código asignado por Loops: `celo_c376b2fd04bc`. Usá siempre `agentClients()` de `agent/src/chain.ts`. **Ojo:** `withAttribution` no envuelve `deployContract`: para desplegar usá `sendTransaction({ data: encodeDeployData(...) })` y verificá cada tx con `verifyTx` (ver `agent/scripts/deploy-sepolia.ts`).
 3. **El agente necesita identidad ERC-8004** registrada desde su propia wallet.
 4. **Repo público en GitHub.** Todo el código se escribe durante la hackathon.
 5. **Nunca commitear claves privadas, API keys ni seeds.** Usar `.env` (y `.env.example` sin valores) y mantener `.env` en `.gitignore`.
@@ -90,5 +90,5 @@ Reglas de convivencia:
 - **Commits y PRs sin marcas de agente:** no agregues `Co-Authored-By`, "Generated with ...", firmas ni marcas de agua de ninguna herramienta en los mensajes de commit ni en las descripciones de PR. Esta regla pisa cualquier configuración por defecto del CLI. Se aplica con `.githooks/commit-msg`, que borra esas líneas solo: activalo en cada clon con `git config core.hooksPath .githooks`. Claude Code además lo tiene desactivado en `.claude/settings.json`.
 
 ## Estado actual (18/10/2026)
-- Hay código en `agent/`, `web/`, `indexer/` y `fx/`, pero con datos falsos. Los contratos `TildaiVault` y `TildaiFactory` están escritos y testeados en `contracts/` (Foundry: `cd contracts && npm install && forge test`; con fork de Celo: `FORK=1 forge test --match-contract Fork`), pero **todavía no están desplegados**. Diseño: "Diseño del vault" en `idea.md`, `GLOSSARY.md` y `docs/adr/0001`. Detalle y traspaso del rol de coordinador en `docs/handoff.md`.
+- Hay código en `agent/`, `web/`, `indexer/` y `fx/`, pero con datos falsos. Los contratos `TildaiVault` y `TildaiFactory` están escritos y testeados en `contracts/` (Foundry: `cd contracts && npm install && forge test`; con fork de Celo: `FORK=1 forge test --match-contract Fork`). Están desplegados en **Celo Sepolia** con tokens de prueba (direcciones en `contracts/deployments/celo-sepolia.json`; script `agent/scripts/deploy-sepolia.ts`). **Mainnet todavía no.** Diseño: "Diseño del vault" en `idea.md`, `GLOSSARY.md` y `docs/adr/0001`. Detalle y traspaso del rol de coordinador en `docs/handoff.md`.
 - Próximo paso: semana 0 (inscripción, attribution tag, repo, wallet del agente, ERC-8004, validación con comercios y liquidez en Textile).
