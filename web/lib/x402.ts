@@ -15,6 +15,10 @@ export const GAS_SPONSORING = {
   eip2612GasSponsoring: { info: { description: "The facilitator sponsors the EIP-2612 permit to Permit2.", version: "1" } },
 };
 
+export function x402Unavailable(env: Record<string, string | undefined> = process.env): string | null {
+  return env.TILDAI_CHAIN_ID === "42220" ? null : "x402 solo cobra en Celo mainnet (TILDAI_CHAIN_ID=42220): este vault no es de mainnet";
+}
+
 function makeServer(facilitator: FacilitatorClient) {
   return new x402ResourceServer(facilitator).register("eip155:*", new ExactEvmScheme());
 }
@@ -61,7 +65,10 @@ export async function payWithX402(
   amount: number,
   payment: PaymentPayload,
   facilitator: FacilitatorClient | null = facilitatorFromEnv(),
+  env: Record<string, string | undefined> = process.env,
 ): Promise<X402Result> {
+  const unavailable = x402Unavailable(env);
+  if (unavailable) return { status: "rejected", reason: unavailable };
   if (!facilitator) return { status: "rejected", reason: "Falta X402_API_KEY: el cobro con x402 no está habilitado" };
   let settling = false;
   try {

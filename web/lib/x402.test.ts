@@ -2,10 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { FacilitatorClient } from "@x402/core/server";
 import type { PaymentPayload } from "@x402/core/types";
-import { buildRequirements, facilitatorFromEnv, payWithX402, requirementsFor, WARS } from "./x402.ts";
+import { buildRequirements, facilitatorFromEnv, payWithX402 as pay, requirementsFor, WARS, x402Unavailable } from "./x402.ts";
 import { x402ResourceServer } from "@x402/core/server";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
 
+const mainnet = { TILDAI_CHAIN_ID: "42220" };
+const payWithX402 = (v: string, a: number, p: PaymentPayload, f: FacilitatorClient | null) => pay(v, a, p, f, mainnet);
 const vault = "0x498450FE2b46F6b380857b2DE20Df7D52D17F18B";
 
 function fake(over: Partial<FacilitatorClient> = {}): FacilitatorClient {
@@ -83,4 +85,17 @@ test("pago por otro monto o vault: rechazado sin verificar", async () => {
 test("monto o vault inválidos: rechazado", async () => {
   assert.equal((await payWithX402(vault, 0, await payment(), fake())).status, "rejected");
   assert.equal((await payWithX402("0x123", 5, await payment(), fake())).status, "rejected");
+});
+
+test("TILDAI_CHAIN_ID distinto de 42220 (o ausente): x402 rechazado sin tocar al facilitador", async () => {
+  let called = false;
+  const f = fake({ verify: async () => ((called = true), { isValid: true }) });
+  for (const env of [{ TILDAI_CHAIN_ID: "11142220" }, {}, { TILDAI_DEMO: "1" }]) {
+    const r = await pay(vault, 8500.5, await payment(), f, env);
+    assert.equal(r.status, "rejected");
+    assert.match((r as any).reason, /mainnet/);
+    assert.match(x402Unavailable(env)!, /42220/);
+  }
+  assert.equal(called, false);
+  assert.equal(x402Unavailable(mainnet), null);
 });
