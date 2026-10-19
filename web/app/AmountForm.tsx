@@ -20,9 +20,21 @@ export default function AmountForm({ vault, fixed, sale }: { vault: string; fixe
   const [paying, setPaying] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<PollOutcome | null>(null);
+  const [pending, setPending] = useState(false);
   useEffect(() => {
-    checkWarsWallet(window.ethereum, fixed ?? 0).then((c) => setOption(choosePayOption(c)));
-  }, [fixed]);
+    checkWarsWallet(window.ethereum).then((c) => setOption(choosePayOption(c)));
+  }, []);
+  useEffect(() => {
+    if (option !== "wars" || !amount) return;
+    const t = setTimeout(
+      () =>
+        checkWarsWallet(window.ethereum, amount).then((c) => {
+          if (c === "insufficient" || c === "no_wallet") setOption("pesos");
+        }),
+      400,
+    );
+    return () => clearTimeout(t);
+  }, [amount, option]);
   useEffect(() => {
     if (!paid || !sale) return;
     const ctl = new AbortController();
@@ -42,7 +54,12 @@ export default function AmountForm({ vault, fixed, sale }: { vault: string; fixe
     setPaying(true);
     const r = await payWithWars(window.ethereum, vault, amount, sale);
     setPaying(false);
-    if (r.ok) { setPaid(true); if (!sale) setOutcome("cobrada"); }
+    if (r.ok) {
+      setPaid(true);
+      // sin sale no hay poll del indexer: el tilde sale del settle que ya confirmó el facilitador
+      if (r.pending) setPending(true);
+      else if (!sale) setOutcome("cobrada");
+    }
     else setErr(r.reason);
   };
   return (
@@ -84,7 +101,7 @@ export default function AmountForm({ vault, fixed, sale }: { vault: string; fixe
       {err && <p role="alert">{err}</p>}
       {paid && (
         <p role="status">
-          {outcome === "cobrada" ? "✓ Pago confirmado" : outcome === "timeout" ? "Seguimos confirmando; el comercio te avisa." : "Pago enviado, confirmando…"}
+          {pending ? "Estamos confirmando tu pago, no vuelvas a pagar." : outcome === "cobrada" ? "✓ Pago confirmado" : outcome === "timeout" ? "Seguimos confirmando; el comercio te avisa." : "Pago enviado, confirmando…"}
         </p>
       )}
     </div>
