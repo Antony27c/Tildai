@@ -56,9 +56,11 @@ export interface CotizarOptions {
 }
 
 /**
- * Argumentos formateados para llamar a TildaiVault.swap
+ * Argumentos listos para llamar a TildaiVault.swap
  */
 export interface SwapArgs {
+  rfqId: string;
+  claimToken: string;
   spender: `0x${string}`;
   target: `0x${string}`;
   data: `0x${string}`;
@@ -70,8 +72,10 @@ export interface SwapArgs {
 export interface CotizarFirmeParams {
   monto: bigint | string | number;
   vaultAddress: `0x${string}`;
-  maxRate: bigint | number;
-  previewRate?: number;
+  /** Max wARS (wei) pagados por 1 USD₮ entero (unidad del vault: 18 decimales) */
+  maxRate: bigint;
+  /** Tasa previa indicativa (en wei de wARS por USD₮ entero, o número) para control de slippage <= 1% */
+  previewRate: bigint | number;
 }
 
 export interface CotizarFirmeOptions {
@@ -85,8 +89,6 @@ export interface CotizarFirmeOptions {
   timeoutMs?: number;
   /** Timestamp actual en ms (para pruebas deterministas de expiresAt) */
   nowMs?: number;
-  /** Tasa preview previa opcional cuando se usa firma con parámetros posicionales */
-  previewRate?: number;
 }
 
 /**
@@ -141,13 +143,19 @@ export async function cotizar(
   });
 
   if (!response.ok) {
-    const errorBody = await response.text();
-    throw new Error(`Error en API de Textile FX (${response.status}): ${errorBody}`);
+    let errorCode = 'http_error';
+    try {
+      const errJson = await response.json();
+      errorCode = errJson?.error?.code ?? errorCode;
+    } catch {
+      // Ignora error de parseo
+    }
+    throw new Error(`Error en API de Textile FX (${response.status}): ${errorCode}`);
   }
 
   const json = await response.json();
   if (json.error) {
-    throw new Error(`Textile FX API Error: ${json.error.message || json.error.code}`);
+    throw new Error(`Textile FX API Error: ${json.error.code ?? 'unknown_error'}`);
   }
 
   const data = json.data;
@@ -210,38 +218,8 @@ export async function cotizar(
 export async function cotizarFirme(
   params: CotizarFirmeParams,
   options?: CotizarFirmeOptions
-): Promise<SwapArgs>;
-export async function cotizarFirme(
-  monto: bigint | string | number,
-  vaultAddress: `0x${string}`,
-  maxRate: bigint | number,
-  options?: CotizarFirmeOptions & { previewRate?: number }
-): Promise<SwapArgs>;
-export async function cotizarFirme(
-  montoOrParams: bigint | string | number | CotizarFirmeParams,
-  vaultAddressOrOptions?: `0x${string}` | CotizarFirmeOptions,
-  maxRateArg?: bigint | number,
-  optionsArg?: CotizarFirmeOptions & { previewRate?: number }
 ): Promise<SwapArgs> {
-  let monto: bigint | string | number;
-  let vaultAddress: `0x${string}`;
-  let maxRate: bigint | number;
-  let previewRate: number | undefined;
-  let options: CotizarFirmeOptions | undefined;
-
-  if (typeof montoOrParams === 'object' && montoOrParams !== null && !('trim' in montoOrParams) && typeof montoOrParams !== 'bigint') {
-    monto = montoOrParams.monto;
-    vaultAddress = montoOrParams.vaultAddress;
-    maxRate = montoOrParams.maxRate;
-    previewRate = montoOrParams.previewRate;
-    options = vaultAddressOrOptions as CotizarFirmeOptions | undefined;
-  } else {
-    monto = montoOrParams as bigint | string | number;
-    vaultAddress = vaultAddressOrOptions as `0x${string}`;
-    maxRate = maxRateArg!;
-    options = optionsArg;
-    previewRate = options?.previewRate;
-  }
+  const { monto, vaultAddress, maxRate, previewRate } = params;
 
   // 1. Obtener API Key (nunca loguearla ni incluirla en mensajes de error)
   const apiKey = options?.apiKey ?? process.env.TEXTILE_API_KEY;
@@ -258,10 +236,14 @@ export async function cotizarFirme(
     throw new Error('Dirección de vault inválida');
   }
 
+  if (previewRate === undefined || previewRate === null) {
+    throw new Error('previewRate es obligatorio para control de slippage');
+  }
+
   const customFetch = options?.fetchFn ?? fetch;
   const baseUrl = (options?.apiBaseUrl ?? TEXTILE_API_URL).replace(/\/$/, '');
   const url = `${baseUrl}/v2/rfq/request`;
-  // Timeout de 75 s como dice la doc oficial
+  // Timeout de 75 s según documentación oficial
   const timeoutMs = options?.timeoutMs ?? 75000;
   const signal = AbortSignal.timeout(timeoutMs);
 
@@ -286,26 +268,28 @@ export async function cotizarFirme(
       signal,
     });
   } catch (err: any) {
-    // Sanitizar error de red para asegurar que la key nunca aparezca
-    const safeMsg = (err?.message || 'Error de red').replace(new RegExp(apiKey, 'g'), '***');
     if (err?.name === 'TimeoutError' || /timeout|aborted/i.test(err?.message)) {
-      const timeoutErr = new Error(`Timeout al solicitar cotización firme a Textile FX: ${safeMsg}`);
+      const timeoutErr = new Error('Timeout al solicitar cotización firme a Textile FX');
       timeoutErr.name = 'TimeoutError';
       throw timeoutErr;
     }
-    throw new Error(`Error al conectar con Textile RFQ: ${safeMsg}`);
+    throw new Error(`Error de red al conectar con Textile RFQ: ${err?.name ?? 'NetworkError'}`);
   }
 
   if (!response.ok) {
-    const errorBody = await response.text();
-    const safeBody = errorBody.replace(new RegExp(apiKey, 'g'), '***');
-    throw new Error(`Error en API de Textile FX (${response.status}): ${safeBody}`);
+    let errorCode = 'http_error';
+    try {
+      const errJson = await response.json();
+      errorCode = errJson?.error?.code ?? errorCode;
+    } catch {
+      // Ignora error de parseo JSON
+    }
+    throw new Error(`Error en API de Textile FX (${response.status}): ${errorCode}`);
   }
 
   const json = await response.json();
   if (json.error) {
-    const errorMsg = (json.error.message || json.error.code || 'Error desconocido').replace(new RegExp(apiKey, 'g'), '***');
-    throw new Error(`Textile FX API Error: ${errorMsg}`);
+    throw new Error(`Textile FX API Error: ${json.error.code ?? 'unknown_error'}`);
   }
 
   const data = json.data;
@@ -313,15 +297,32 @@ export async function cotizarFirme(
     throw new Error('Respuesta inválida de Textile FX: falta campo data');
   }
 
-  // 2. Validación y rechazo: ante no_quote, devolver motivo sin tasa por defecto
+  // Ante no_quote, devolver motivo exacto sin inventar tasa por defecto
   if (data.status === 'no_quote') {
-    throw new Error(`Cotización rechazada: ${data.reason || 'sin cotización disponible (no_quote)'}`);
+    throw new Error(`Cotización rechazada: ${data.reason ?? 'sin cotización disponible (no_quote)'}`);
   }
 
-  // Resolver spender y target (swap.to)
-  const rawSpender = (data.spender || data.transactions?.approval?.spender || data.transactions?.approval?.to || '');
-  const rawTarget = (data.transactions?.swap?.to || '');
+  // Exigir status === 'quoted'
+  if (data.status !== 'quoted') {
+    throw new Error(`Cotización rechazada: status '${data.status}' no es 'quoted'`);
+  }
+
+  const quote = data.quote;
+  if (!quote) {
+    throw new Error('Cotización rechazada: falta objeto quote');
+  }
+
+  // Resolver spender y target desde quote y transactions.swap
+  const rawSpender = quote.spender;
+  const rawTarget = data.transactions?.swap?.to;
   const swapData = data.transactions?.swap?.data;
+
+  if (!rawSpender || typeof rawSpender !== 'string') {
+    throw new Error('Cotización rechazada: quote.spender ausente');
+  }
+  if (!rawTarget || typeof rawTarget !== 'string') {
+    throw new Error('Cotización rechazada: transactions.swap.to ausente');
+  }
 
   const spender = rawSpender.toLowerCase() as `0x${string}`;
   const target = rawTarget.toLowerCase() as `0x${string}`;
@@ -337,10 +338,10 @@ export async function cotizarFirme(
     throw new Error('Cotización rechazada: transactions.swap.data ausente o inválida');
   }
 
-  // Validar expiresAt (mínimo 15 segundos restantes)
-  const rawExpiresAt = data.expiresAt;
+  // Validar expiresAt desde quote (mínimo 15 segundos restantes)
+  const rawExpiresAt = quote.expiresAt;
   if (rawExpiresAt === undefined || rawExpiresAt === null) {
-    throw new Error('Cotización rechazada: falta expiresAt');
+    throw new Error('Cotización rechazada: falta quote.expiresAt');
   }
 
   let expiresAtMs: number;
@@ -358,8 +359,11 @@ export async function cotizarFirme(
     throw new Error(`Cotización rechazada: orden expira en ${remainingSeconds.toFixed(1)}s (menos de 15s) o ya expiró`);
   }
 
-  // Validar takerPays: no puede superar lo pedido
-  const takerPays = BigInt(data.takerPays ?? data.sellAmount ?? '0');
+  // Validar takerPays sin fallbacks: no puede superar el monto pedido
+  if (quote.takerPays === undefined || quote.takerPays === null) {
+    throw new Error('Cotización rechazada: quote.takerPays ausente');
+  }
+  const takerPays = BigInt(quote.takerPays);
   if (takerPays > sellAmountAtomic) {
     throw new Error(`Cotización rechazada: takerPays (${takerPays}) supera el monto pedido (${sellAmountAtomic})`);
   }
@@ -367,49 +371,33 @@ export async function cotizarFirme(
     throw new Error('Cotización rechazada: takerPays inválido');
   }
 
-  const buyAmount = BigInt(data.buyAmount ?? '0');
+  if (quote.buyAmount === undefined || quote.buyAmount === null) {
+    throw new Error('Cotización rechazada: quote.buyAmount ausente');
+  }
+  const buyAmount = BigInt(quote.buyAmount);
   if (buyAmount <= 0n) {
     throw new Error('Cotización rechazada: buyAmount es 0');
   }
 
-  // Validar tasa wARS por USD₮ contra maxRate
-  const sellFormatted = parseFloat(formatUnits(takerPays, 18));
-  const buyFormatted = parseFloat(formatUnits(buyAmount, 6));
-  const firmRate = sellFormatted / buyFormatted;
-
-  let isRateExceeded = false;
-  let maxRateDisplay = '';
-  if (typeof maxRate === 'bigint') {
-    if (maxRate > 10n ** 12n) {
-      // maxRate en wei por USD₮ entero (formato TildaiVault)
-      const rateWei = (takerPays * 10n ** 6n) / buyAmount;
-      isRateExceeded = rateWei > maxRate;
-      maxRateDisplay = formatUnits(maxRate, 18);
-    } else {
-      isRateExceeded = firmRate > Number(maxRate);
-      maxRateDisplay = maxRate.toString();
-    }
-  } else {
-    isRateExceeded = firmRate > maxRate;
-    maxRateDisplay = maxRate.toString();
+  // Validar tasa contra maxRate en enteros según fórmula del vault:
+  // takerPays * 10^6 > buyAmount * maxRate
+  if (takerPays * 10n ** 6n > buyAmount * maxRate) {
+    throw new Error('Cotización rechazada: tasa supera maxRate');
   }
 
-  if (isRateExceeded) {
-    throw new Error(`Cotización rechazada: tasa ${firmRate.toFixed(2)} wARS/USDT supera maxRate ${maxRateDisplay}`);
+  // Validar que no empeore más de 1% respecto al preview usando aritmética entera
+  const previewRateWei = typeof previewRate === 'bigint' ? previewRate : parseUnits(previewRate.toString(), 18);
+  const firmRateWei = (takerPays * 10n ** 6n) / buyAmount;
+  // firmRateWei > previewRateWei * 1.01 <=> firmRateWei * 100 > previewRateWei * 101
+  if (firmRateWei * 100n > previewRateWei * 101n) {
+    throw new Error('Cotización rechazada: tasa es más de 1% peor que preview');
   }
 
-  // Validar que no empeore más de 1% respecto a la cotización previa preview
-  if (previewRate !== undefined && previewRate > 0) {
-    const deviation = (firmRate - previewRate) / previewRate;
-    if (deviation > 0.01) {
-      throw new Error(`Cotización rechazada: tasa ${firmRate.toFixed(2)} es ${(deviation * 100).toFixed(2)}% peor que preview (${previewRate.toFixed(2)})`);
-    }
-  }
-
-  // 3. Devolver argumentos listos para TildaiVault.swap
   const expiresAtSec = Math.floor(expiresAtMs / 1000);
 
   return {
+    rfqId: data.rfqId ?? '',
+    claimToken: data.claimToken ?? '',
     spender: rawSpender as `0x${string}`,
     target: rawTarget as `0x${string}`,
     data: swapData as `0x${string}`,
