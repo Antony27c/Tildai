@@ -14,6 +14,7 @@ Toda ruta exige `Authorization: Bearer <TILDAI_INDEXER_TOKEN>` salvo `GET /healt
 | `GET /sales?vault=&since=&until=` | Ventas del vault en el rango de creación |
 | `GET /payments?vault=&since=&until=` | Pagos confirmados al vault; con rango, 503 si falta algún timestamp; sin rango, vienen con `timestamp: null` |
 | `GET /events?since=` | Eventos `{seq, type, paymentId, saleId?, payment}` de a 500; `cursor` es el `seq` del último devuelto |
+| `GET /stats` | Métricas para la entrega: `{vaults, activeVaults7d, payments, salesCobradas, warsReceived, paymentsWithoutTimestamp, byDay[14] en hora AR, generatedAt}` |
 | `GET /health` | `{cursor, vaults}`, sin auth |
 
 ## Eventos y deduplicación
