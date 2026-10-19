@@ -5,6 +5,7 @@ import { payUrl } from "../lib/sale.ts";
 import { pollSale, type PollOutcome } from "../lib/poll.ts";
 import { checkWarsWallet, payWithWars } from "../lib/buyer.ts";
 import { choosePayOption, PESOS_NOTE, type PayOption } from "../lib/wars.ts";
+import Tick from "./cobro/Tick.tsx";
 import styles from "./Cobro.module.css";
 
 declare global {
@@ -15,7 +16,7 @@ declare global {
 
 const fmt = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" });
 
-type Status = { tone: "info" | "ok" | "warn"; title: string; body?: string; retry?: boolean };
+type Status = { tone: "info" | "ok" | "warn"; title: string; body?: string; retry?: boolean; tick?: boolean };
 
 export default function AmountForm({ vault, fixed, sale }: { vault: string; fixed: number | null; sale: string | null }) {
   const [raw, setRaw] = useState(fixed ? String(fixed) : "");
@@ -72,7 +73,7 @@ export default function AmountForm({ vault, fixed, sale }: { vault: string; fixe
     : pending
       ? { tone: "warn", title: "Estamos confirmando tu pago", body: "Si se te descontó plata, no vuelvas a pagar." }
       : outcome === "cobrada"
-        ? { tone: "ok", title: "✓ Cobrada", body: "El comercio ya la tiene anotada." }
+        ? { tone: "ok", title: "Cobrada", body: "El comercio ya la tiene anotada.", tick: true }
         : outcome === "timeout"
           ? { tone: "warn", title: "Todavía no se anotó", body: "Si ya pagaste, el comercio te avisa apenas entre.", retry: true }
           : { tone: "info", title: "Confirmando tu pago…" };
@@ -132,7 +133,10 @@ export default function AmountForm({ vault, fixed, sale }: { vault: string; fixe
       <div role="status" aria-live="polite">
         {status && (
           <div className={styles.status} data-tone={status.tone}>
-            <strong className={styles.statusTitle}>{status.title}</strong>
+            <strong className={styles.statusTitle}>
+              {status.tick && <Tick className={styles.tickOk} />}
+              {status.title}
+            </strong>
             {status.body && <span className={styles.statusBody}>{status.body}</span>}
             {status.retry && (
               <button className={`${styles.btn} ${styles.secondary} ${styles.btnSmall}`} onClick={() => window.location.reload()}>

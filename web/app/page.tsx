@@ -3,6 +3,7 @@ import AmountForm from "./AmountForm.tsx";
 import Landing from "./Landing.tsx";
 import Notice from "./cobro/Notice.tsx";
 import CounterQr from "./cobro/CounterQr.tsx";
+import Tick from "./cobro/Tick.tsx";
 import styles from "./Cobro.module.css";
 import { parseAmount } from "../lib/ripio.ts";
 import { parseSale } from "../lib/sale.ts";
@@ -35,7 +36,10 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ v
   return (
     <main className={styles.shell}>
       <header className={styles.brand}>
-        <h1 className={styles.logo}>Tildai ✓</h1>
+        <h1 className={styles.logo}>
+          Tildai
+          <Tick className={styles.logoTick} />
+        </h1>
         <span className={styles.tagline}>cada cobro, tildado</span>
       </header>
       <AmountForm vault={vault} fixed={fixed} sale={parsedSale.sale} />

@@ -17,9 +17,18 @@
 
 .logo {
   margin: 0;
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--s1, 4px);
   font-size: 1.35rem;
   font-weight: 800;
   letter-spacing: -0.02em;
+}
+
+.logoTick {
+  width: 0.62em;
+  height: 0.62em;
+  color: var(--accent, #0e7a3d);
 }
 
 .tagline {
@@ -31,8 +40,7 @@
   display: grid;
   gap: var(--s4, 16px);
   background: var(--surface, #ffffff);
-  border: 1px solid var(--border, #dfe3e8);
-  border-radius: var(--radius, 16px);
+  border-radius: var(--radius, 8px);
   padding: var(--s5, 24px) var(--s4, 16px);
 }
 
@@ -43,11 +51,9 @@
 }
 
 .amountLabel {
-  font-size: 0.8rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: var(--muted, #5c6470);
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--muted, #5f6158);
 }
 
 .amount {
@@ -100,12 +106,15 @@
 
 .btn {
   appearance: none;
+  display: inline-block;
   font: inherit;
   font-size: 1.1rem;
   font-weight: 700;
+  text-align: center;
+  text-decoration: none;
   min-height: 52px;
   padding: var(--s3, 12px) var(--s4, 16px);
-  border-radius: var(--radius, 14px);
+  border-radius: 999px;
   border: 1.5px solid transparent;
   cursor: pointer;
 }
@@ -131,6 +140,38 @@
   font-size: 1rem;
   font-weight: 600;
   justify-self: start;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.skel {
+  display: block;
+  border-radius: var(--radius, 8px);
+  background: var(--border, #e0e2dc);
+}
+
+.skelLabel {
+  width: 8rem;
+  height: 0.9rem;
+  margin-inline: auto;
+}
+
+.skelAmount {
+  width: 11rem;
+  height: 3.2rem;
+  margin-inline: auto;
+}
+
+.skelBtn {
+  min-height: 52px;
+  border-radius: 999px;
 }
 
 .hint {
@@ -176,7 +217,17 @@
 }
 
 .statusTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--s2, 8px);
   font-size: 1.05rem;
+}
+
+.tickOk {
+  width: 1.1em;
+  height: 1.1em;
+  flex: none;
+  color: var(--ok, #0e7a3d);
 }
 
 .status[data-tone="ok"] .statusTitle {
@@ -192,9 +243,9 @@
   display: grid;
   gap: var(--s2, 8px);
   padding: var(--s5, 24px) var(--s4, 16px);
-  border-radius: var(--radius, 16px);
-  border: 1px solid var(--border, #dfe3e8);
-  background: var(--surface, #ffffff);
+  border-radius: var(--radius, 8px);
+  border: 1px solid var(--border, #e0e2dc);
+  background: var(--surface, #fafbf9);
 }
 
 .notice[data-tone="warn"] {
@@ -214,6 +265,11 @@
 
 .noticeBody {
   margin: 0;
+  max-width: 46ch;
+}
+
+.noticeAction {
+  margin-top: var(--s3, 12px);
 }
 
 .qr {
@@ -222,8 +278,7 @@
   justify-items: center;
   text-align: center;
   background: var(--surface, #ffffff);
-  border: 1px solid var(--border, #dfe3e8);
-  border-radius: var(--radius, 16px);
+  border-radius: var(--radius, 8px);
   padding: var(--s5, 24px) var(--s4, 16px);
 }
 
@@ -249,10 +304,25 @@
 
 @media (prefers-reduced-motion: no-preference) {
   .btn {
-    transition: transform 0.08s ease;
+    transition: transform 0.08s ease, opacity 0.12s ease;
+  }
+
+  .btn:hover:not(:disabled) {
+    opacity: 0.9;
+    transform: translateY(-1px);
   }
 
   .btn:active:not(:disabled) {
     transform: scale(0.985);
+  }
+
+  .skel {
+    animation: skelPulse 1.4s ease-in-out infinite;
+  }
+}
+
+@keyframes skelPulse {
+  50% {
+    opacity: 0.45;
   }
 }
