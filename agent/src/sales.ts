@@ -79,7 +79,7 @@ export class SalesBook {
 export function crearCobro(book: SalesBook, input: { monto: number }, payBaseUrl: string) {
   const sale = book.create(input.monto);
   const pesos = Number(input.monto);
-  const link = `${payBaseUrl.replace(/\/$/, "")}/pagar/${sale.id}?amount=${pesos}`;
+  const link = `${payBaseUrl.replace(/\/$/, "")}/?vault=${book.vault.address}&amount=${pesos}`;
   // Ripio on-ramp pays the vault directly (see AGENTS.md).
   const rampLink = `https://ramp.ripio.com/?country=AR&chain=42220&token=WARS&amount=${pesos}&address=${book.vault.address}`;
   return { ventaId: sale.id, monto: formatPesos(sale.amount), estado: sale.status, link, rampLink };

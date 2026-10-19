@@ -2,7 +2,7 @@ import { defineTool } from "eve/tools";
 import { z } from "zod";
 
 import { dolarizar } from "../src/fondos.ts";
-import { fx, vaultOps } from "../src/runtime.ts";
+import { fx, opsDelChat } from "../src/runtime.ts";
 
 export default defineTool({
   description:
@@ -12,5 +12,5 @@ export default defineTool({
     monto: z.number().positive().describe("Monto en pesos argentinos, hasta 2 decimales"),
     idOperacion: z.string().min(1).optional().describe("Id de negocio. Reusalo al reintentar; usá uno distinto solo si el dueño pide repetir a propósito."),
   }),
-  execute: (input) => dolarizar(vaultOps(), fx, input),
+  execute: (input, ctx) => dolarizar(opsDelChat(ctx), fx, input),
 });
