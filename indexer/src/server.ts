@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { createHash, timingSafeEqual } from 'node:crypto';
-import { IndexerError, type Sale, type Store } from './indexer.ts';
+import { IndexerError, type Payment, type Sale, type Store } from './indexer.ts';
 
 export const MAX_BODY = 16 * 1024;
 const UINT256 = 2n ** 256n;
@@ -45,7 +45,31 @@ async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> 
   return body as Record<string, unknown>;
 }
 
+const pview = (p: Payment) => ({ id: p.id, from: p.from, amount: p.amount.toString(), txHash: p.txHash, timestamp: p.timestamp ?? null, ...(p.saleId && { saleId: p.saleId }) });
+
 const view = (s: Sale) => ({ id: s.id, vault: s.vault, amount: s.amount.toString(), status: s.status, ...(s.txHash && { txHash: s.txHash }) });
+
+const intParam = (url: URL, name: string, def: number) => {
+  const v = url.searchParams.get(name);
+  if (v == null) return def;
+  const n = Number(v);
+  if (!/^\d+$/.test(v) || !Number.isSafeInteger(n)) throw new HttpError(400, `${name} inválido`);
+  return n;
+};
+
+const vaultParam = (url: URL) => {
+  const v = url.searchParams.get('vault');
+  if (!v || !/^0x[0-9a-fA-F]{40}$/.test(v)) throw new HttpError(400, 'vault inválido');
+  return v.toLowerCase();
+};
+
+// [since, until) en ms; invertidos o no numéricos es 400.
+const range = (url: URL): [number, number] => {
+  const since = intParam(url, 'since', 0);
+  const until = url.searchParams.get('until') == null ? Infinity : intParam(url, 'until', 0);
+  if (since > until) throw new HttpError(400, 'since mayor que until');
+  return [since, until];
+};
 
 export function createApp(o: { indexer: Indexer; store: Store; token: string; onError?: (e: unknown) => void }): Server {
   const { indexer, store } = o;
@@ -86,6 +110,31 @@ export function createApp(o: { indexer: Indexer; store: Store; token: string; on
       const s = store.sales.get(parts[1]);
       if (!s) throw new HttpError(404, 'venta inexistente');
       return send(res, 200, view(s));
+    }
+    if (key === 'GET /sales') {
+      const vault = vaultParam(url);
+      const [since, until] = range(url);
+      const list = [...store.sales.values()].filter((x) => x.vault === vault && x.createdAt >= since && x.createdAt < until);
+      return send(res, 200, list.map((x) => ({ ...view(x), createdAt: x.createdAt })));
+    }
+    if (key === 'GET /payments') {
+      const vault = vaultParam(url);
+      const [since, until] = range(url);
+      const list = [...store.payments.values()].filter((p) => p.vault === vault);
+      // Si falta algún timestamp el rango no es confiable: 503 para que el agente reintente, nunca una respuesta a medias.
+      // Con rango y pagos sin timestamp la respuesta no es confiable: 503 para reintentar. Sin rango, se incluyen con timestamp null.
+      if ((url.searchParams.has('since') || url.searchParams.has('until')) && list.some((p) => p.timestamp == null)) {
+        throw new HttpError(503, 'hay pagos sin timestamp todavía, reintenta');
+      }
+      return send(res, 200, list.filter((p) => p.timestamp == null || (p.timestamp >= since && p.timestamp < until)).sort((a, b) => Number(a.block - b.block)).map(pview));
+    }
+    if (key === 'GET /events') {
+      const since = intParam(url, 'since', 0);
+      const last = store.events.at(-1)?.seq ?? 0;
+      if (since > last) throw new HttpError(400, 'cursor mayor que el último evento');
+      const list = store.events.filter((e) => e.seq > since).slice(0, 500).map((e) => ({ ...e, payment: store.payments.get(e.paymentId) ? pview(store.payments.get(e.paymentId)!) : null }));
+      // El cursor es el seq del último evento devuelto: con más de 500, el agente sigue desde ahí y no se saltea.
+      return send(res, 200, { events: list, cursor: list.at(-1)?.seq ?? since });
     }
     throw new HttpError(404, 'ruta inexistente');
   }

@@ -18,6 +18,7 @@ export type Log = {
 // Solo lectura: lo mínimo que usamos de un PublicClient de viem. Un falso lo reemplaza en tests.
 export interface ChainReader {
   getBlockNumber(): Promise<bigint>;
+  getBlock(p: { blockNumber: bigint }): Promise<{ timestamp: bigint }>; // timestamp en segundos, como la cadena
   getLogs(p: {
     address: string;
     event: typeof transferEvent | typeof vaultCreatedEvent;
@@ -27,18 +28,25 @@ export interface ChainReader {
   }): Promise<Log[]>;
 }
 
-export type Sale = { id: string; vault: string; amount: bigint; createdBlock: bigint; status: 'pendiente' | 'cobrada'; paymentId?: string; txHash?: string };
-export type Payment = { id: string; vault: string; from: string; amount: bigint; block: bigint; txHash: string; saleId?: string };
+export type Sale = { id: string; vault: string; amount: bigint; createdBlock: bigint; createdAt: number; status: 'pendiente' | 'cobrada'; paymentId?: string; txHash?: string };
+export type Payment = { id: string; vault: string; from: string; amount: bigint; block: bigint; txHash: string; timestamp?: number; saleId?: string };
+// Eventos para el agente: seq crece de a 1 y es el cursor de GET /events.
+export type StoreEvent = { seq: number; type: 'venta_cobrada' | 'pago_sin_venta'; paymentId: string; saleId?: string };
 
 // shortcut: store en memoria, se pierde al reiniciar; cambiar por DB antes de usarlo con plata real.
 export class Store {
   sales = new Map<string, Sale>();
   payments = new Map<string, Payment>();
   vaults = new Map<string, string>(); // vault -> dueño
+  events: StoreEvent[] = [];
   cursor: bigint | null = null; // próximo bloque a leer de Transfer
   vaultCursor: bigint | null = null; // próximo bloque a leer de VaultCreated
 
-  addSale(s: { id: string; vault: string; amount: bigint; createdBlock: bigint }): Sale {
+  addEvent(type: StoreEvent['type'], paymentId: string, saleId?: string) {
+    this.events.push({ seq: this.events.length + 1, type, paymentId, ...(saleId && { saleId }) });
+  }
+
+  addSale(s: { id: string; vault: string; amount: bigint; createdBlock: bigint; createdAt: number }): Sale {
     if (this.sales.has(s.id)) throw new IndexerError('conflict', `venta duplicada: ${s.id}`);
     if (s.amount <= 0n) throw new IndexerError('invalid', 'el monto debe ser positivo');
     const sale: Sale = { ...s, vault: s.vault.toLowerCase(), status: 'pendiente' };
@@ -79,6 +87,7 @@ export type IndexerOpts = {
   retries?: number;
   backoffMs?: number;
   sleep?: RetryOpts['sleep'];
+  now?: () => number; // ms, para el timestamp de creación de las ventas
   save?: (store: Store) => Promise<void>; // persistencia; si falla, el error sube (poll lo registra y devuelve ok:false)
   onError?: (e: unknown) => void;
 };
@@ -89,14 +98,15 @@ function reconcile(store: Store, p: Payment): boolean {
   if (p.saleId) return false;
   for (const s of store.sales.values()) {
     if (s.status === 'pendiente' && !s.txHash && s.vault === p.vault && s.amount === p.amount && p.block >= s.createdBlock) {
-      claim(s, p);
+      claim(store, s, p);
       return true;
     }
   }
   return false;
 }
 
-function claim(s: Sale, p: Payment) {
+function claim(store: Store, s: Sale, p: Payment) {
+  store.addEvent('venta_cobrada', p.id, s.id);
   s.status = 'cobrada';
   s.paymentId = p.id;
   p.saleId = s.id;
@@ -107,7 +117,7 @@ function settleByTx(store: Store, s: Sale): boolean {
   if (s.status !== 'pendiente' || !s.txHash) return false;
   for (const p of store.payments.values()) {
     if (p.txHash === s.txHash && !p.saleId && p.vault === s.vault && p.amount === s.amount && p.block >= s.createdBlock) {
-      claim(s, p);
+      claim(store, s, p);
       return true;
     }
   }
@@ -151,6 +161,27 @@ export function createIndexer(o: IndexerOpts) {
       const from = max(o.startBlock, (store.cursor ?? o.startBlock) - rescan);
       let newPayments = 0;
       let matched = 0;
+      // Pone fecha a los pagos que aún no la tienen: una lectura por bloque, se guarda en memoria y luego en disco.
+      // Si falla el RPC se corta la tanda: el pago queda sin timestamp, no se pierde, y se reintenta en el próximo poll.
+      async function fillTimestamps() {
+        const blocks = new Map<bigint, number | null>();
+        for (const p of store.payments.values()) {
+          if (p.timestamp != null) continue;
+          if (!blocks.has(p.block)) {
+            try {
+              const { timestamp } = await rpc(() => client.getBlock({ blockNumber: p.block }));
+              blocks.set(p.block, Number(timestamp) * 1000);
+            } catch (e) {
+              log(e);
+              blocks.set(p.block, null);
+              break;
+            }
+          }
+          const ts = blocks.get(p.block);
+          if (ts != null) p.timestamp = ts;
+        }
+      }
+
       await eachChunk(from, safe, maxRange, async (a, b) => {
         if (store.vaults.size) {
           const logs = await rpc(() =>
@@ -162,17 +193,20 @@ export function createIndexer(o: IndexerOpts) {
             if (!dest || !store.vaults.has(dest.toLowerCase()) || typeof value !== 'bigint' || value <= 0n) continue;
             const id = `${l.transactionHash.toLowerCase()}:${l.logIndex}`;
             let p = store.payments.get(id);
+            const isNew = !p;
             if (!p) {
               p = { id, vault: dest.toLowerCase(), from: (src ?? '').toLowerCase(), amount: value, block: l.blockNumber, txHash: l.transactionHash.toLowerCase() };
               store.payments.set(id, p);
               newPayments++;
             }
             if (reconcile(store, p)) matched++;
+            else if (isNew) store.addEvent('pago_sin_venta', p.id);
           }
         }
         store.cursor = max(store.cursor ?? 0n, b + 1n);
       });
       for (const s of store.sales.values()) if (settleByTx(store, s)) matched++;
+      await fillTimestamps();
       await o.save?.(store);
       return { ok: true, from, to: safe, newVaults, newPayments, matched };
     } catch (error) {
@@ -191,7 +225,7 @@ export function createIndexer(o: IndexerOpts) {
 
   // Si el RPC falla no se crea la venta: sin bloque de creación no se puede conciliar con seguridad.
   async function createSale(s: { id: string; vault: string; amount: bigint }): Promise<Sale> {
-    const sale = store.addSale({ ...s, createdBlock: await rpc(() => client.getBlockNumber()) });
+    const sale = store.addSale({ ...s, createdBlock: await rpc(() => client.getBlockNumber()), createdAt: (o.now ?? Date.now)() });
     await o.save?.(store);
     return sale;
   }
