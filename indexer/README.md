@@ -2,6 +2,28 @@
 
 Indexa `Transfer` de wARS hacia los vaults (descubiertos vía `VaultCreated` de la factory) y concilia ventas. Corre con `npm start`.
 
+## Correr en un server
+
+```
+cd indexer && npm start
+```
+
+Variables (si falta o es inválida alguna obligatoria, el proceso falla al inicio nombrando la variable):
+
+| Variable | Descripción |
+|---|---|
+| `TILDAI_INDEXER_TOKEN` | **Obligatoria**, mínimo 32 caracteres. Bearer de todas las rutas salvo `/health`. |
+| `TILDAI_STORE_PATH` | **Obligatoria**. Ruta del JSON donde persiste el store (ventas, pagos, cursores). |
+| `TILDAI_NETWORK` | `celo` (default) o `celo-sepolia`. |
+| `TILDAI_FACTORY` | Dirección de la factory. Obligatoria en mainnet; en Sepolia sale de `contracts/deployments/celo-sepolia.json`. |
+| `TILDAI_FROM_BLOCK` | Bloque de deploy de la factory. Obligatorio en mainnet. |
+| `RPC_URL` | Default: Forno de la red. |
+| `TILDAI_WARS` | Default: wARS de la red. |
+| `TILDAI_PORT` / `TILDAI_HOST` | Default `8787` / `127.0.0.1`. |
+| `TILDAI_POLL_SECONDS` | Segundos entre polls, entero. Default `10`. |
+
+El store queda en `TILDAI_STORE_PATH`: se guarda tras cada cambio y al apagar con SIGINT/SIGTERM (apagado prolijo: no acepta más requests, termina el tramo de logs en curso y persiste). Healthcheck sin auth: `GET /health` → `{cursor, vaults}`.
+
 ## API
 
 Toda ruta exige `Authorization: Bearer <TILDAI_INDEXER_TOKEN>` salvo `GET /health`. Montos en wei como strings; `timestamp` y `createdAt` en milisegundos; rangos `[since, until)`.

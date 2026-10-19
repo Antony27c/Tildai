@@ -1,3 +1,4 @@
+import { setTimeout as sleep } from 'node:timers/promises';
 import { parseAbi } from 'viem';
 import { eachChunk, withRetry, type RetryOpts } from './rpc.ts';
 
@@ -33,7 +34,7 @@ export type Payment = { id: string; vault: string; from: string; amount: bigint;
 // Eventos para el agente: seq crece de a 1 y es el cursor de GET /events.
 export type StoreEvent = { seq: number; type: 'venta_cobrada' | 'pago_sin_venta'; paymentId: string; saleId?: string };
 
-// shortcut: store en memoria, se pierde al reiniciar; cambiar por DB antes de usarlo con plata real.
+// shortcut: store en memoria volcado a JSON por save() tras cada cambio; cambiar por DB antes de usarlo con plata real.
 export class Store {
   sales = new Map<string, Sale>();
   payments = new Map<string, Payment>();
@@ -215,11 +216,11 @@ export function createIndexer(o: IndexerOpts) {
     }
   }
 
-  // Reintenta en el próximo tick; para con la señal.
+  // Reintenta en el próximo tick; para con la señal, también a mitad del sleep.
   async function watch(ms: number, signal: AbortSignal) {
     while (!signal.aborted) {
       await pollOnce();
-      await new Promise((r) => setTimeout(r, ms));
+      await sleep(ms, undefined, { signal }).catch(() => {}); // AbortError al abortar: el while sale
     }
   }
 
