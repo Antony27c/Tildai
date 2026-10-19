@@ -11,7 +11,7 @@ export interface Vault {
   transfers(): Promise<Transfer[]>;
 }
 
-// shortcut: in-memory fake until TildaiVault exists; swap for a viem reader of wARS Transfer events to the vault.
+// In-memory fake for tests and local runs without TILDAI_VAULT.
 export class FakeVault implements Vault {
   readonly address = "0x000000000000000000000000000000000000dEaD";
   private list: Transfer[] = [];
