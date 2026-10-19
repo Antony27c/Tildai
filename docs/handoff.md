@@ -1,5 +1,7 @@
 # Traspaso del rol de coordinador (18/10/2026, actualizado al cambio de cuenta)
 
+> **Actualización 19/10 (coordina Claude Code):** la cuarta tanda (alta `/start`, endpoints `/sales` `/payments` `/events`, botón "Pagar con wARS") está revisada, corregida y mergeada en `Antony27c/Tildai` (`da20731`; tests: agent 61, indexer 49, web 37). Frontend nuevo en el worktree `devin-frontend` (rama `Antony27c/devin-frontend`), con tres Devin: 1) sistema visual + landing, 2) panel del comercio `/panel`, 3) pulido de la página de cobro. Usan las skills `impeccable` y `taste-skill` de `.agents/skills/`, instaladas sin hooks ni binarios. Pendientes que vio la revisión: el canal de Telegram queda abierto al `/start` (rate-limit o allowlist antes de mainnet), `cierre_caja` solo corre para el vault del dueño y un `createVault` que nunca se mina deja el chat "pendiente".
+
 Quien lea esto toma el rol de **coordinador** de Tildai: reparte tareas a los agentes, revisa su código antes de mergear y protege las reglas de `AGENTS.md`. Antes de nada leé `AGENTS.md` e `idea.md`.
 
 **Contexto del cambio:** coordinó Devin hasta el 18/10. El dueño cambia a la cuenta de **Claude Code**. Si el nuevo coordinador es Claude Code, `CLAUDE.md` ya importa `AGENTS.md` y fija `ponytail`: alcanza con leer esos archivos.
