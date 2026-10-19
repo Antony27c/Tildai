@@ -90,5 +90,5 @@ Reglas de convivencia:
 - **Commits y PRs sin marcas de agente:** no agregues `Co-Authored-By`, "Generated with ...", firmas ni marcas de agua de ninguna herramienta en los mensajes de commit ni en las descripciones de PR. Esta regla pisa cualquier configuración por defecto del CLI. Se aplica con `.githooks/commit-msg`, que borra esas líneas solo: activalo en cada clon con `git config core.hooksPath .githooks`. Claude Code además lo tiene desactivado en `.claude/settings.json`.
 
 ## Estado actual (18/10/2026)
-- Hay código en `agent/`, `web/`, `indexer/` y `fx/`, pero con datos falsos. **Faltan los contratos** (`contracts/`). Detalle y traspaso del rol de coordinador en `docs/handoff.md`.
+- Hay código en `agent/`, `web/`, `indexer/` y `fx/`, pero con datos falsos. Los contratos `TildaiVault` y `TildaiFactory` están escritos y testeados en `contracts/` (Foundry: `cd contracts && npm install && forge test`; con fork de Celo: `FORK=1 forge test --match-contract Fork`), pero **todavía no están desplegados**. Diseño: "Diseño del vault" en `idea.md`, `GLOSSARY.md` y `docs/adr/0001`. Detalle y traspaso del rol de coordinador en `docs/handoff.md`.
 - Próximo paso: semana 0 (inscripción, attribution tag, repo, wallet del agente, ERC-8004, validación con comercios y liquidez en Textile).

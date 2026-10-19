@@ -1,0 +1,11 @@
+{
+  "name": "tildai-contracts",
+  "private": true,
+  "scripts": {
+    "test": "forge test"
+  },
+  "devDependencies": {
+    "@openzeppelin/contracts": "5.6.1",
+    "forge-std": "github:foundry-rs/forge-std#v1.17.0"
+  }
+}

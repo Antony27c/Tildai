@@ -113,13 +113,21 @@ El agente decide y actúa solo, siempre dentro de los límites que fija el contr
 - **ERC-8004:** docs.celo.org/build-on-celo/build-with-ai/8004. Explorador: 8004scan.io
 - **Herramientas:** `npx skills add celo-org/celopedia-skills`, `npx loopshouse add agents-on-open-rails`, `npx eve@latest init tildai`.
 
-### Requisitos del vault (a resolver antes de escribir los contratos)
-Salen de la revisión de Textile FX (`docs/textile-fx.md`) y de la revisión de código del 18/10.
-- **Quién firma el swap.** Los fondos están en el `TildaiVault`, que es un contrato. La orden de Textile (UniswapX con Permit2) necesita la firma del dueño de los fondos; un contrato solo puede firmar si implementa EIP-1271. El vault debe poder ejecutar el swap él mismo, solo hacia Textile.
-- **Tasa mínima onchain.** El contrato rechaza cualquier swap por debajo de un piso de tasa (wARS por USD₮) y por encima de un tope por operación y por día. Si la cotización falla o no cumple el piso, no se convierte.
-- **Textile tiene muy poco volumen.** `USDT_WARS`: 6,39 USD₮ operados en 24 h y `bid` en 0. Hay cotización pero no historial de llenados: probar primero con un monto chico en mainnet. Volver de USD₮ a wARS no tiene comprador hoy.
-- **Conciliación de pagos.** Un pago solo cobra una venta creada antes que él (bloque o timestamp de creación de la venta). Lo cumplen hoy `indexer/` y `agent/`; el contrato debería emitir un evento con el id de la venta para dejar de depender del monto exacto.
-- **Vaults permitidos.** La página de cobro solo arma links para vaults registrados (`TILDAI_VAULTS` hoy, `TildaiFactory` cuando exista).
+### Diseño del vault (acordado el 18/10, ver `GLOSSARY.md` y `docs/adr/`)
+- **Saldos internos:** operativo, ahorro e impuestos. El agente **aparta** de operativo a ahorro o impuestos (la plata no sale del vault).
+- **Qué puede hacer el agente:** apartar, retirar wARS operativo solo a la **wallet de retiro** del dueño y **dolarizar** en Textile. Los USD₮ quedan en el vault y solo los retira el dueño.
+- **Apartados protegidos:** solo el dueño saca ahorro e impuestos. Puede habilitar por separado que el agente dolarice el ahorro o los impuestos, con un aviso de riesgo en el chat.
+- **Tope diario** (retiros más dolarización, día en hora argentina): lo elige cada dueño en el alta. Se sugieren $100.000.
+- **Precio máximo del dólar** onchain (hoy ~1.617 wARS por USD₮; se sugieren 1.700) y tope por operación. Si la cotización es peor, no se dolariza: el agente avisa y propone subir el máximo, y solo cambia si el dueño firma. Fuera de la cadena, el agente además rechaza si la tasa empeora más de 1% contra la cotización previa.
+- **Quién cambia qué:** el dueño puede todo (retirar cualquier token, cambiar o pausar al agente, cambiar wallet de retiro, límites, destinos y permisos). El agente solo puede volver los límites más estrictos (bajar el tope, bajar el precio máximo, pausarse).
+- **Swap directo con Textile** (ADR 0001): el vault es el taker; sin EIP-1271 para la orden. Para la prueba de control se usa una API key de partner de Textile (key live aprobada el 18/10; va en `agent/.env` como `TEXTILE_API_KEY`).
+- **Reintentos:** cada operación del agente lleva un `opId` y el vault rechaza los repetidos.
+- **Sin evento de venta en el contrato:** x402 paga directo al vault. Los pagos por x402 se concilian con el hash de la tx del facilitador y los de Ripio por monto y hora. Un pago solo cobra una venta creada antes que él.
+- **Sin comisión** en el contrato durante la hackathon (se cuenta en el pitch).
+- **Factory:** deploy simple, sin proxies ni actualizaciones. Guarda un registro de vaults, que reemplaza a `TILDAI_VAULTS`. La llama el agente en el `/start`.
+- **Wallet del dueño:** passkey (huella o Face ID), por ejemplo con Para. Para el contrato el dueño es una dirección cualquiera.
+- **Herramientas:** Foundry, con tests sobre un fork de Celo mainnet (wARS y Textile reales). Después Sepolia y después mainnet, cada uno con el OK del dueño.
+- **Textile tiene muy poco volumen.** `USDT_WARS`: 6,39 USD₮ operados en 24 h y `bid` en 0. Probar primero con un monto chico en mainnet. Volver de USD₮ a wARS no tiene comprador hoy.
 
 ---
 
@@ -173,7 +181,7 @@ Salen de la revisión de Textile FX (`docs/textile-fx.md`) y de la revisión de 
 ### Semana 1 - Cobro onchain (lun 20 al dom 26/10)
 - [ ] Scaffold del monorepo: `contracts/`, `agent/` (eve), `web/` (Next.js)
 - [ ] Integrar el SDK de attribution tags en el cliente de wallet (antes de cualquier tx)
-- [ ] `TildaiVault` + `TildaiFactory`: depósitos, reglas (% ahorro/impuestos), destinos permitidos, tope diario y retiro del dueño
+- [x] `TildaiVault` + `TildaiFactory`: depósitos, reglas (% ahorro/impuestos), destinos permitidos, tope diario y retiro del dueño (`contracts/`, `forge test`; con fork de Celo, `FORK=1 forge test --match-contract Fork` en bash)
 - [ ] Tests de contratos y deploy en Sepolia, luego **mainnet + verificación**
 - [ ] Página de cobro con x402 en wARS (Permit2), con monto dinámico y QR fijo
 - [ ] Botón "Pagar con pesos" con on-ramp de Ripio hacia el vault
@@ -220,7 +228,7 @@ Salen de la revisión de Textile FX (`docs/textile-fx.md`) y de la revisión de 
 - [ ] Telegram primero (recomendado) o WhatsApp directo
 - [ ] Comercios concretos (nombre y rubro)
 - [ ] Track secundario: Textile FX (si hay liquidez) o USA₮ con x402
-- [ ] Proveedor de smart wallet para el dueño (Para u otro)
+- [x] Wallet del dueño: passkey (huella o Face ID). Falta confirmar el proveedor (Para u otro)
 - [ ] LLM del agente
 
 ## 11. Futuro (post-hackathon)
