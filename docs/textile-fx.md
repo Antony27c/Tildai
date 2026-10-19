@@ -67,7 +67,7 @@ Textile FX opera con un modelo híbrido: **RFQ off-chain con liquidación atómi
            │                               │
            │ 2. POST /v2/rfq/request       │ (Bearer TEXTILE_API_KEY, taker = vault)
            ├──────────────────────────────►│
-           │◄──────────────────────────────┤ Calldata firmado (spender, target, data, minOut)
+           │◄──────────────────────────────┤ data = { rfqId, claimToken, status: 'quoted', quote, transactions }
            │                               │
            │ 3. vault.swap(opId, ...)      ▼
            └─────────────────────────► TildaiVault ──transferFrom──► Textile (LimitOrderReactor)
@@ -94,6 +94,12 @@ Textile FX opera con un modelo híbrido: **RFQ off-chain con liquidación atómi
   - El vault es el **taker** de la orden y no requiere EIP-1271.
   - Al utilizar una **API key de partner** (`TEXTILE_API_KEY`), la API no requiere ni verifica `takerProof`.
   - El lado del taker se liquida mediante un `transferFrom` estándar ejecutado durante la llamada atómica a `TildaiVault.swap`.
+- **Estructura oficial de respuesta según documentación (`docs.textilecredit.com/api/v2/rfq`):**
+  ```typescript
+  const { rfqId, claimToken, status, quote, transactions } = response.data;
+  // quote: { sellAmount, buyAmount, feeAmount, takerPays, rateRay, expiresAt, orderDeadline, reactor, spender }
+  // transactions: { approval: { to: warsAddress }, swap: { to: reactorAddress, data } }
+  ```
 - **Parámetros de la llamada:**
   - `Authorization: Bearer <TEXTILE_API_KEY>` (leída de entorno, nunca expuesta en logs ni mensajes de error).
   - `taker`: Dirección del contrato `TildaiVault`.
@@ -122,17 +128,20 @@ console.log(preview);
 Pide una orden vinculante a los market makers y valida rigurosamente las condiciones de seguridad antes de devolver los argumentos para `TildaiVault.swap`:
 
 ```typescript
+import { parseUnits } from 'viem';
 import { cotizarFirme } from './fx/index.ts';
 
 const swapArgs = await cotizarFirme({
   monto: '50000',
   vaultAddress: '0xVault...',
-  maxRate: 1700,          // Tasa máxima permitida (1700 ARS/USDT)
-  previewRate: 1617.33,   // Tasa preview previa para validar slippage <= 1%
+  maxRate: parseUnits('1700', 18),      // Max wARS (wei) pagados por 1 USD₮ entero (unidad del vault)
+  previewRate: parseUnits('1617.33', 18) // Tasa preview obligatoria para control de slippage <= 1%
 });
 
 console.log(swapArgs);
 // {
+//   rfqId: 'rfq_01j...',
+//   claimToken: 'clm_01j...',
 //   spender: '0xa9AA0a64769cBed4d3B1Ceb4Df01CdE915C235b3',
 //   target: '0xa9AA0a64769cBed4d3B1Ceb4Df01CdE915C235b3',
 //   data: '0x1234...',
@@ -146,14 +155,15 @@ console.log(swapArgs);
 La función `cotizarFirme` rechaza la orden y arroja un error descriptivo si:
 1. `TEXTILE_API_KEY` no está configurada en el entorno (o en opciones).
 2. La API responde `status: "no_quote"` (devuelve el motivo reportado, sin inventar tasas por defecto).
-3. Ocurre un error HTTP o de red (la API key nunca se filtra en el mensaje de error).
-4. `expiresAt` ya pasó o vence en menos de 15 segundos.
-5. `spender` no es una dirección autorizada en Celo (`0xa9AA0a64769cBed4d3B1Ceb4Df01CdE915C235b3` ni `0x01b006d5c687bde182aa36F542f1f014144742e2`).
-6. `transactions.swap.to` (target) no es una dirección autorizada en Celo.
-7. `takerPays` supera el monto pedido (`takerPays > sellAmountAtomic`).
-8. La tasa efectiva supera `maxRate` (ej. > 1.700 wARS por USD₮).
-9. La tasa efectiva es más de 1% peor que la cotización previa `previewRate`.
-10. La solicitud excede el timeout de 75 segundos.
+3. `status` no es `'quoted'`.
+4. Ocurre un error HTTP o de red (la API key nunca se filtra en el mensaje de error; se utiliza `status` y `error.code` sin volcar cuerpos crudos).
+5. `expiresAt` ya pasó o vence en menos de 15 segundos.
+6. `quote.spender` no es una dirección autorizada en Celo (`0xa9AA0a64769cBed4d3B1Ceb4Df01CdE915C235b3` ni `0x01b006d5c687bde182aa36F542f1f014144742e2`).
+7. `transactions.swap.to` (target) no es una dirección autorizada en Celo.
+8. `quote.takerPays` supera el monto pedido (`takerPays > sellAmountAtomic`).
+9. La tasa en enteros supera `maxRate` (`takerPays * 10^6 > buyAmount * maxRate`).
+10. La tasa en enteros es más de 1% peor que la cotización previa (`firmRateWei * 100 > previewRateWei * 101`).
+11. La solicitud excede el timeout de 75 segundos.
 
 ### Ejecución de tests:
 ```bash
@@ -181,6 +191,6 @@ Para cumplir con las reglas de negocio del proyecto:
    - **Resuelto vía ADR 0001:** El vault es el taker directo. El contrato `TildaiVault` aprueba a `spender` por el monto exacto `amountIn`, llama a `target` con `data`, y devuelve la aprobación a cero. No se requiere firma EIP-1271 ni transferir fondos a la wallet del agente.
    - La prueba de control de la orden queda cubierta por la **API key de partner** de Textile.
 2. **Protección contra slippage y manipulación:**
-   - **Doble barrera de protección:**
+   - **Doble barrera de protección con aritmética entera:**
      - **Onchain:** `TildaiVault.swap` verifica `spent * usdtUnit <= received * maxRate`.
-     - **Offchain:** `cotizarFirme` rechaza cualquier cotización firme que sea más de **1% peor** que la cotización preview previa o que supere `maxRate`.
+     - **Offchain:** `cotizarFirme` rechaza cualquier cotización firme que sea más de **1% peor** que la cotización previa `previewRate` o que supere `maxRate`.
