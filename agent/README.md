@@ -11,7 +11,6 @@ Agente de caja con tools `crear_cobro`, `ventas_hoy`, `aviso_pago` y un schedule
    TELEGRAM_WEBHOOK_SECRET_TOKEN=un-secreto-cualquiera
    TELEGRAM_BOT_USERNAME=tu_bot
    TILDAI_OWNER_CHAT_ID=<tu chat id>
-   TILDAI_DEMO=1            # habilita simular_pago (solo demo)
    ```
    Si todavía no sabés tu chat id, dejá `TILDAI_OWNER_CHAT_ID` vacío: el bot ignora todo y loguea el id del chat que le escribió.
 3. Credenciales del modelo (AI Gateway o `ANTHROPIC_API_KEY`) con `/login` en la TUI de eve.
@@ -20,7 +19,7 @@ Agente de caja con tools `crear_cobro`, `ventas_hoy`, `aviso_pago` y un schedule
    curl -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" -H "Content-Type: application/json" \
      -d '{"url":"https://<tu-tunel>/eve/v1/telegram","secret_token":"'"$TELEGRAM_WEBHOOK_SECRET_TOKEN"'","allowed_updates":["message","callback_query"]}'
    ```
-5. Probá: "cobrame 8500", "simulá un pago de 8500", "¿me pagaron?", "¿cuánto vendí hoy?".
+5. Probá: "cobrame 8500", "¿me pagaron?", "¿cuánto vendí hoy?". (con el vault falso no entran pagos; eso se cubre en los tests).
 6. Cierre de caja: con `npm run dev` corriendo, `curl -X POST http://localhost:2000/eve/v1/dev/schedules/cierre_caja`.
 
 ## Tests
