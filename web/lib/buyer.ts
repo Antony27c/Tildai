@@ -39,13 +39,14 @@ async function ensureCelo(provider: EIP1193Provider) {
   }
 }
 
-// 402 que vale reintentar (p. ej. carrera de nonce del permit); si el settle quedó indeterminado, NO reintentar
-export function retriable(status: number, error?: string): boolean {
-  return status === 402 && !/onchain|verific|confirm/i.test(error ?? "");
+// Solo se reintenta un pago que el servidor rechazó como "invalid" (p. ej. carrera de nonce del permit).
+// Con otro código —y sobre todo "indeterminate"— la plata pudo haberse movido: NO reintentar.
+export function retriable(status: number, code?: string): boolean {
+  return status === 402 && code === "invalid";
 }
 
-export function readPayResponse(status: number, body: { txHash?: string; error?: string }): PayOutcome {
-  if (status !== 200) return { ok: false, reason: mapPayError(new Error(body.error ?? `HTTP ${status}`)) };
+export function readPayResponse(status: number, body: { txHash?: string; error?: string; code?: string }): PayOutcome {
+  if (status !== 200) return { ok: false, reason: mapPayError(body.code ?? new Error(body.error ?? `HTTP ${status}`)) };
   // 200 sin txHash: la liquidación pudo ocurrir igual; jamás decir "no se te debitó nada"
   return body.txHash ? { ok: true, txHash: body.txHash } : { ok: true, pending: true };
 }
@@ -80,10 +81,10 @@ export async function payWithWars(
     }
 
     let res = await payFetch(payUrl(vault, amount, sale));
-    let body = (await res.json().catch(() => ({}))) as { txHash?: string; error?: string };
-    if (retriable(res.status, body.error)) {
+    let body = (await res.json().catch(() => ({}))) as { txHash?: string; error?: string; code?: string };
+    if (retriable(res.status, body.code)) {
       res = await payFetch(payUrl(vault, amount, sale));
-      body = (await res.json().catch(() => ({}))) as { txHash?: string; error?: string };
+      body = (await res.json().catch(() => ({}))) as { txHash?: string; error?: string; code?: string };
     }
     return readPayResponse(res.status, body);
   } catch (e) {

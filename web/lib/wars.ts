@@ -9,6 +9,19 @@ export const UNCONFIRMED = "No pudimos confirmar el cobro. Si se te descontó pl
 export const GENERIC = "No pudimos cobrar, no se te debitó nada";
 export const PESOS_NOTE = "Pagás en pesos, sin wallet ni gas.";
 
+// Cada liquidación x402 nos cobra gas al facilitador: debajo del mínimo solo va "Pagar con pesos".
+export const X402_MIN = 100;
+
+// Códigos estables de /api/pay: el cliente nunca ve el texto crudo del facilitador.
+export type PayCode = "invalid" | "not_settled" | "indeterminate" | "facilitator_error" | "unavailable";
+export const PAY_MSG: Record<PayCode, string> = {
+  invalid: "El pago no coincide con el monto o el comercio",
+  not_settled: GENERIC,
+  indeterminate: UNCONFIRMED,
+  facilitator_error: GENERIC,
+  unavailable: "El cobro con wARS no está habilitado ahora",
+};
+
 export type WalletCheck = "enough" | "insufficient" | "no_wallet" | "no_accounts" | "error";
 export type PayOption = "wars" | "pesos";
 
@@ -22,6 +35,11 @@ export function choosePayOption(check: WalletCheck): PayOption {
 }
 
 export function mapPayError(e: unknown): string {
+  if (typeof e === "string") {
+    if (Object.hasOwn(PAY_MSG, e)) return PAY_MSG[e as PayCode];
+    // códigos de máquina ajenos (p. ej. insufficient_credits del facilitador) no se traducen por regex
+    if (/^[a-z_]+$/.test(e)) return GENERIC;
+  }
   const msg = e instanceof Error ? `${e.name} ${e.message}` : String(e);
   if (/user.?reject|denied|4001/i.test(msg)) return REJECTED;
   if (/insufficient|saldo|exceed|not enough|no te alcanza/i.test(msg)) return NO_BALANCE;

@@ -21,6 +21,9 @@ export function parseAmount(raw: string | undefined): number | null {
     : /^\d{1,3}(\.\d{3})+$/.test(s)
       ? s.replace(/\./g, "")
       : s;
+  // más de 2 decimales se rechaza: redondear en silencio dejaría una venta pendiente para siempre
+  const decimals = normalized.split(".")[1];
+  if (decimals && decimals.length > 2) return null;
   const n = Number(normalized);
-  return Number.isFinite(n) && n > 0 && n <= 10_000_000 ? Math.round(n * 100) / 100 : null;
+  return Number.isFinite(n) && n > 0 && n <= 10_000_000 ? n : null;
 }

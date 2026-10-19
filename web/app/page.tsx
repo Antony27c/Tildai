@@ -43,7 +43,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ v
         <span className={styles.tagline}>cada cobro, tildado</span>
       </header>
       <AmountForm vault={vault} fixed={fixed} sale={parsedSale.sale} />
-      <CounterQr url={counterUrl} />
+      {amount === undefined && sale === undefined && <CounterQr url={counterUrl} />}
     </main>
   );
 }

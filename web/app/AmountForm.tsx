@@ -4,7 +4,8 @@ import { buildRipioLink, parseAmount } from "../lib/ripio.ts";
 import { payUrl } from "../lib/sale.ts";
 import { pollSale, type PollOutcome } from "../lib/poll.ts";
 import { checkWarsWallet, payWithWars } from "../lib/buyer.ts";
-import { choosePayOption, PESOS_NOTE, type PayOption } from "../lib/wars.ts";
+import { choosePayOption, PESOS_NOTE, X402_MIN, type PayOption } from "../lib/wars.ts";
+import { payStatus } from "./cobro/status.ts";
 import Tick from "./cobro/Tick.tsx";
 import styles from "./Cobro.module.css";
 
@@ -16,8 +17,6 @@ declare global {
 
 const fmt = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" });
 
-type Status = { tone: "info" | "ok" | "warn"; title: string; body?: string; retry?: boolean; tick?: boolean };
-
 export default function AmountForm({ vault, fixed, sale }: { vault: string; fixed: number | null; sale: string | null }) {
   const [raw, setRaw] = useState(fixed ? String(fixed) : "");
   const amount = parseAmount(raw);
@@ -27,6 +26,7 @@ export default function AmountForm({ vault, fixed, sale }: { vault: string; fixe
   const [err, setErr] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<PollOutcome | null>(null);
   const [pending, setPending] = useState(false);
+  const [settled, setSettled] = useState(false);
   useEffect(() => {
     checkWarsWallet(window.ethereum).then((c) => setOption(choosePayOption(c)));
   }, []);
@@ -62,21 +62,14 @@ export default function AmountForm({ vault, fixed, sale }: { vault: string; fixe
     setPaying(false);
     if (r.ok) {
       setPaid(true);
-      // sin sale no hay poll del indexer: el tilde sale del settle que ya confirmó el facilitador
+      // sin sale no hay poll del indexer: solo "Pago enviado" (la red confirmó), nunca "Cobrada"
       if (r.pending) setPending(true);
-      else if (!sale) setOutcome("cobrada");
+      else if (!sale) setSettled(true);
     }
     else setErr(r.reason);
   };
-  const status: Status | null = !paid
-    ? null
-    : pending
-      ? { tone: "warn", title: "Estamos confirmando tu pago", body: "Si se te descontó plata, no vuelvas a pagar." }
-      : outcome === "cobrada"
-        ? { tone: "ok", title: "Cobrada", body: "El comercio ya la tiene anotada.", tick: true }
-        : outcome === "timeout"
-          ? { tone: "warn", title: "Todavía no se anotó", body: "Si ya pagaste, el comercio te avisa apenas entre.", retry: true }
-          : { tone: "info", title: "Confirmando tu pago…" };
+  const status = payStatus({ paid, pending, settled, outcome });
+  const warsEnabled = option === "wars" && (!amount || amount >= X402_MIN);
   return (
     <section className={styles.card} data-pay-url={amount ? payUrl(vault, amount, sale) : undefined} aria-label="Cobro">
       <div className={styles.amountWrap}>
@@ -110,18 +103,21 @@ export default function AmountForm({ vault, fixed, sale }: { vault: string; fixe
       {!paid && (
         <div className={styles.actions}>
           {option === null && <p className={styles.muted}>Viendo si tenés wallet…</p>}
-          {option === "wars" && (
+          {warsEnabled && (
             <button className={`${styles.btn} ${styles.primary}`} disabled={!amount || paying} onClick={payWars}>
               {paying ? "Esperando tu firma…" : "Pagar con wARS"}
             </button>
           )}
           <button
-            className={`${styles.btn} ${option === "wars" ? styles.secondary : styles.primary}`}
+            className={`${styles.btn} ${warsEnabled ? styles.secondary : styles.primary}`}
             disabled={!amount || paying}
             onClick={payPesos}
           >
             Pagar con pesos
           </button>
+          {option === "wars" && amount !== null && amount < X402_MIN && (
+            <p className={styles.hint}>Con wARS el mínimo es $ {X402_MIN}; con pesos no hay mínimo.</p>
+          )}
           {option === "pesos" && <p className={styles.hint}>{PESOS_NOTE}</p>}
         </div>
       )}

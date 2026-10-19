@@ -43,8 +43,7 @@ test("requerimiento Permit2: wARS, payTo = vault, 18 decimales", async () => {
 test("sin API key: rechazado, sin llamar a nadie", async () => {
   assert.equal(facilitatorFromEnv({}), null);
   const r = await payWithX402(vault, 8500.5, await payment(), null);
-  assert.equal(r.status, "rejected");
-  assert.match((r as any).reason, /X402_API_KEY/);
+  assert.deepEqual(r, { status: "rejected", code: "unavailable" });
   await assert.rejects(requirementsFor(vault, 1, null), /X402_API_KEY/);
 });
 
@@ -52,48 +51,57 @@ test("facilitador acepta y liquida: pagado con el hash real", async () => {
   assert.deepEqual(await payWithX402(vault, 8500.5, await payment(), fake()), { status: "paid", txHash: "0xabc", payer: "0xPayer" });
 });
 
-test("el facilitador rechaza la verificación: rechazado", async () => {
+test("el facilitador rechaza la verificación: code invalid, sin texto crudo", async () => {
   const f = fake({ verify: async () => ({ isValid: false, invalidReason: "permit2_allowance_required" }) });
-  const r = await payWithX402(vault, 8500.5, await payment(), f);
-  assert.equal(r.status, "rejected");
-  assert.match((r as any).reason, /permit2_allowance_required/);
+  assert.deepEqual(await payWithX402(vault, 8500.5, await payment(), f), { status: "rejected", code: "invalid" });
 });
 
-test("falla la liquidación o el facilitador se cae: rechazado, nunca pagado", async () => {
+test("falla la liquidación o el facilitador se cae: code not_settled / facilitator_error", async () => {
   const bad = fake({ settle: async () => ({ success: false, errorReason: "insufficient_credits", transaction: "", network: "eip155:42220" }) });
-  assert.equal((await payWithX402(vault, 8500.5, await payment(), bad)).status, "rejected");
+  // insufficient_credits es nuestro saldo: al cliente llega el código, no el motivo
+  assert.deepEqual(await payWithX402(vault, 8500.5, await payment(), bad), { status: "rejected", code: "not_settled" });
   const down = fake({ verify: async () => { throw new Error("timeout"); } });
-  const r = await payWithX402(vault, 8500.5, await payment(), down);
-  assert.equal(r.status, "rejected");
-  assert.match((r as any).reason, /timeout/);
+  assert.deepEqual(await payWithX402(vault, 8500.5, await payment(), down), { status: "rejected", code: "facilitator_error" });
 });
 
-test("error durante settle: indeterminado, avisa que verifique onchain", async () => {
+test("error durante settle: indeterminado (la plata pudo moverse)", async () => {
   const f = fake({ settle: async () => { throw new Error("timeout"); } });
-  const r = await payWithX402(vault, 8500.5, await payment(), f);
-  assert.equal(r.status, "rejected");
-  assert.match((r as any).reason, /verificá onchain/);
+  assert.deepEqual(await payWithX402(vault, 8500.5, await payment(), f), { status: "rejected", code: "indeterminate" });
 });
 
 test("pago por otro monto o vault: rechazado sin verificar", async () => {
   let called = false;
   const f = fake({ verify: async () => ((called = true), { isValid: true }) });
-  assert.equal((await payWithX402(vault, 100, await payment(8500.5), f)).status, "rejected");
+  assert.deepEqual(await payWithX402(vault, 100, await payment(8500.5), f), { status: "rejected", code: "invalid" });
   assert.equal(called, false);
 });
 
-test("monto o vault inválidos: rechazado", async () => {
-  assert.equal((await payWithX402(vault, 0, await payment(), fake())).status, "rejected");
-  assert.equal((await payWithX402("0x123", 5, await payment(), fake())).status, "rejected");
+test("monto o vault inválidos: invalid sin tocar el facilitador", async () => {
+  let called = false;
+  const f = fake({ getSupported: async () => ((called = true), { kinds: [], extensions: [], signers: {} }) });
+  assert.deepEqual(await payWithX402(vault, 0, await payment(), f), { status: "rejected", code: "invalid" });
+  assert.deepEqual(await payWithX402("0x123", 5, await payment(), f), { status: "rejected", code: "invalid" });
+  assert.equal(called, false);
+});
+
+test("el servidor se crea e inicializa una sola vez por facilitador", async () => {
+  let inits = 0;
+  const f = fake({
+    getSupported: async () => (
+      inits++,
+      { kinds: [{ x402Version: 2, scheme: "exact", network: "eip155:42220" }], extensions: ["eip2612GasSponsoring"], signers: {} }
+    ),
+  });
+  assert.equal((await payWithX402(vault, 100, await payment(100), f)).status, "paid");
+  assert.equal((await payWithX402(vault, 100, await payment(100), f)).status, "paid");
+  assert.equal(inits, 1);
 });
 
 test("TILDAI_CHAIN_ID distinto de 42220 (o ausente): x402 rechazado sin tocar al facilitador", async () => {
   let called = false;
   const f = fake({ verify: async () => ((called = true), { isValid: true }) });
   for (const env of [{ TILDAI_CHAIN_ID: "11142220" }, {}, { TILDAI_DEMO: "1" }]) {
-    const r = await pay(vault, 8500.5, await payment(), f, env);
-    assert.equal(r.status, "rejected");
-    assert.match((r as any).reason, /mainnet/);
+    assert.deepEqual(await pay(vault, 8500.5, await payment(), f, env), { status: "rejected", code: "unavailable" });
     assert.match(x402Unavailable(env)!, /42220/);
   }
   assert.equal(called, false);
