@@ -1,14 +1,17 @@
 import { headers } from "next/headers";
-import { isAddress } from "viem";
 import { QRCodeSVG } from "qrcode.react";
 import AmountForm from "./AmountForm.tsx";
 import { parseAmount } from "../lib/ripio.ts";
-import { isAllowedVault } from "../lib/vaults.ts";
+import { checkVault } from "../lib/vaults.ts";
 
 export default async function Page({ searchParams }: { searchParams: Promise<{ vault?: string; amount?: string }> }) {
   const { vault, amount } = await searchParams;
-  if (!isAllowedVault(vault)) {
+  const check = await checkVault(vault);
+  if (check.status === "invalid") {
     return <main style={{ padding: 24 }}>Este link de cobro no es válido. Pedile al comercio que te pase el QR de nuevo.</main>;
+  }
+  if (check.status === "error" || !vault) {
+    return <main style={{ padding: 24 }}>No pudimos verificar el comercio. Probá de nuevo en unos minutos; no hiciste ningún pago.</main>;
   }
   const h = await headers();
   const base = process.env.NEXT_PUBLIC_BASE_URL || `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`;
