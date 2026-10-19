@@ -19,7 +19,7 @@ test("crear_cobro: link, monto y estado pendiente", () => {
   assert.equal(r.ventaId, 1);
   assert.equal(r.monto, "$8.500");
   assert.equal(r.estado, "pendiente");
-  assert.equal(r.link, "https://pay.test/pagar/1?amount=8500");
+  assert.equal(r.link, "https://pay.test/?vault=0x000000000000000000000000000000000000dEaD&amount=8500");
   assert.ok(r.rampLink.includes(`address=${vault.address}`));
 });
 

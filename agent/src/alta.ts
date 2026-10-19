@@ -16,6 +16,7 @@ export type ChatEntry = {
   owner: Address;
   dailyCap: string;
   vault?: Address;
+  fromBlock?: string;
   txHash?: Hex;
   error?: string;
   at: number;
@@ -66,7 +67,7 @@ export class ChatVaultRegistry {
 
 export type AltaResult =
   | { estado: "creado" | "ya_existente"; vault: Address; resumen: string }
-  | { estado: "error"; mensaje: string; txHash?: Hex };
+  | { estado: "pendiente" | "error"; mensaje: string; txHash?: Hex };
 
 export class CreadorVault {
   private o: { registry: ChatVaultRegistry; factory: Address; fromBlock: bigint; reader: OpsReader & ChainReader; wallet: OpsWallet; feeCurrency?: Address; payBaseUrl: string };
@@ -94,7 +95,18 @@ export class CreadorVault {
     return (logs.at(-1)?.args?.vault as Address | undefined) ?? null;
   }
 
-  async crear(chatId: string, ownerRaw: string, capWei: bigint): Promise<AltaResult> {
+  private locks = new Map<string, Promise<AltaResult>>();
+
+  /** Two concurrent /start from the same chat share one in-flight creation, so they can never send two createVault. */
+  crear(chatId: string, ownerRaw: string, capWei: bigint): Promise<AltaResult> {
+    const running = this.locks.get(chatId);
+    if (running) return running;
+    const p = this.doCrear(chatId, ownerRaw, capWei).finally(() => this.locks.delete(chatId));
+    this.locks.set(chatId, p);
+    return p;
+  }
+
+  private async doCrear(chatId: string, ownerRaw: string, capWei: bigint): Promise<AltaResult> {
     const { registry, factory, reader, wallet, feeCurrency } = this.o;
     const prev = registry.get(chatId);
     if (prev?.vault) return { estado: "ya_existente", vault: prev.vault, resumen: this.resumen(prev.vault, BigInt(prev.dailyCap)) };
@@ -104,11 +116,24 @@ export class CreadorVault {
 
     // If a previous tx went out without a confirmed result, check onchain before creating a second vault.
     if (prev?.txHash && !prev.vault) {
+      let receipt: { status: string; logs?: any[] } | null = null;
       try {
-        const receipt = await reader.getTransactionReceipt({ hash: prev.txHash }).catch(() => null);
-        const found = receipt?.status === "success" ? this.vaultDelRecibo(receipt.logs ?? []) : await this.findVaultByOwner(owner);
+        receipt = (await reader.getTransactionReceipt?.({ hash: prev.txHash })) ?? null;
+      } catch (err) {
+        if ((err as Error).name === "TransactionReceiptNotFoundError") {
+          return { estado: "pendiente", mensaje: "Tu caja todavía se está creando: la transacción está en la cadena pero sin confirmar. En un rato probá /start de nuevo y te confirmo.", txHash: prev.txHash };
+        }
+        console.error(`[tildai] ALERTA alta: no se pudo leer el recibo de ${prev.txHash} del chat ${chatId}`, err);
+        return { estado: "error", mensaje: "Ya mandé una transacción para tu caja y no pude verificar si quedó creada. Probá /start en un rato; no te voy a crear dos.", txHash: prev.txHash };
+      }
+      if (receipt === null) {
+        return { estado: "pendiente", mensaje: "Tu caja todavía se está creando: la transacción está en la cadena pero sin confirmar. En un rato probá /start de nuevo y te confirmo.", txHash: prev.txHash };
+      }
+      try {
+        // Search by the stored owner too: the first tx used it, a changed wallet doesn't matter for recovery.
+        const found = receipt.status === "success" ? this.vaultDelRecibo(receipt.logs ?? []) : await this.findVaultByOwner((prev.owner ?? owner) as Address);
         if (found) {
-          await registry.set(chatId, { ...base, estado: "creado", vault: found, txHash: prev.txHash });
+          await registry.set(chatId, { ...base, estado: "creado", vault: found, fromBlock: String((receipt.logs ?? []).at(-1)?.blockNumber ?? ""), txHash: prev.txHash });
           return { estado: "ya_existente", vault: found, resumen: this.resumen(found, capWei) };
         }
       } catch (err) {
@@ -125,7 +150,7 @@ export class CreadorVault {
       const receipt = await reader.waitForTransactionReceipt({ hash: sentHash });
       if (receipt.status !== "success") throw new Error(`la tx ${sentHash} se revirtió`);
       const vault = this.vaultDelRecibo((receipt as any).logs ?? []);
-      await registry.set(chatId, { ...base, estado: "creado", vault, txHash: sentHash });
+      await registry.set(chatId, { ...base, estado: "creado", vault, fromBlock: String(receipt.blockNumber ?? ""), txHash: sentHash });
       return { estado: "creado", vault, resumen: this.resumen(vault, capWei) };
     } catch (err) {
       const txHash = sentHash;

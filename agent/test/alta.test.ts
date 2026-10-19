@@ -17,7 +17,7 @@ const FACTORY = "0x3333333333333333333333333333333333333333" as Address;
 const ADAPTER = "0x0e2a3e05bc9a16f5292a6170456a710cb89c6f72" as Address;
 const KEY = "0x" + "a".repeat(64);
 
-function setup(o: { simulateError?: string; waitError?: string; receipt?: string; vaultOnchain?: Address; file?: string } = {}) {
+function setup(o: { simulateError?: string; waitError?: string; receipt?: string; txReceipt?: { status: string }; vaultOnchain?: Address; file?: string } = {}) {
   const calls: string[] = [];
   const writes: any[] = [];
   const registry = ChatVaultRegistry.load(o.file);
@@ -47,7 +47,7 @@ function setup(o: { simulateError?: string; waitError?: string; receipt?: string
     },
     async getTransactionReceipt() {
       calls.push("getTxReceipt");
-      return null; // no minada: el reintento cae al barrido por owner
+      return o.txReceipt ?? null; // null = aún no minada
     },
     async getBlock() {
       return { timestamp: 0n };
@@ -123,7 +123,7 @@ test("recibo revertido: error con txHash; reintentar verifica onchain y recupera
   assert.equal(c.registry.get("9")?.estado, "error");
 
   // The tx actually landed: the retry sees it onchain and doesn't send another one.
-  const c2 = setup({ file: undefined, vaultOnchain: VAULT });
+  const c2 = setup({ file: undefined, vaultOnchain: VAULT, txReceipt: { status: "reverted" } });
   // Share the registry so the retry sees the previous txHash.
   (c.registry as any).map.forEach((v: any, k: string) => (c2.registry as any).map.set(k, v));
   const r2 = await c2.creador.crear("9", OWNER, pesosToWei(100_000));
@@ -139,7 +139,7 @@ test("si la verificación onchain falla no crea otro vault", async () => {
   const c2 = setup();
   // Recreate the registry state but make getLogs throw.
   c2.registry["map"].set("11", c.registry.get("11")!);
-  (c2.creador as any).o.reader.getLogs = async () => {
+  (c2.creador as any).o.reader.getTransactionReceipt = async () => {
     throw new Error("rpc down");
   };
   const r = await c2.creador.crear("11", OWNER, pesosToWei(100_000));
@@ -170,4 +170,58 @@ test("registry corrupto: error claro en vez de arrancar vacío", () => {
   assert.equal(r1.get("x"), undefined);
   assert.equal(r2.get("x"), undefined);
   rmSync(dir, { recursive: true });
+});
+
+import { parsePesosTexto, MAX_TOPE_PESOS } from "../src/money.ts";
+
+test("tx anterior pendiente: no se manda otra createVault", async () => {
+  const c = setup({ receipt: "reverted" });
+  await c.creador.crear("20", OWNER, pesosToWei(100_000)); // queda txHash guardado
+  const c2 = setup(); // getTransactionReceipt devuelve null = todavía no minó
+  (c.registry as any).map.forEach((v: any, k: string) => (c2.registry as any).map.set(k, v));
+  const r = await c2.creador.crear("20", OWNER, pesosToWei(100_000));
+  assert.equal(r.estado, "pendiente");
+  assert.match(r.mensaje, /todavía se está creando/);
+  assert.equal(c2.calls.includes("write"), false);
+  assert.equal(c2.calls.includes("simulate"), false);
+});
+
+test("dos /start simultáneos del mismo chat comparten una sola creación", async () => {
+  const c = setup();
+  const [r1, r2] = await Promise.all([c.creador.crear("30", OWNER, pesosToWei(100_000)), c.creador.crear("30", OWNER, pesosToWei(100_000))]);
+  assert.equal(r1, r2);
+  assert.equal(c.calls.filter((x) => x === "write").length, 1);
+});
+
+test("la recuperación busca por el owner guardado, no por el nuevo", async () => {
+  const c = setup({ receipt: "reverted" });
+  await c.creador.crear("31", OWNER, pesosToWei(100_000));
+  const OTHER = "0x4444444444444444444444444444444444444444" as Address;
+  const c2 = setup({ txReceipt: { status: "reverted" }, vaultOnchain: VAULT });
+  (c.registry as any).map.forEach((v: any, k: string) => (c2.registry as any).map.set(k, v));
+  // El dueño "cambia" de wallet: el barrido usa el owner de la tx anterior (OWNER), que es quien figura en VaultCreated.
+  const r = await c2.creador.crear("31", OTHER, pesosToWei(100_000));
+  assert.equal(r.estado, "ya_existente");
+  assert.equal(r.vault, VAULT);
+});
+
+test("parseo determinístico del tope en pesos", () => {
+  assert.equal(parsePesosTexto("8.500"), 8500);
+  assert.equal(parsePesosTexto("100.000"), 100_000);
+  assert.equal(parsePesosTexto("1.234.567,89"), 1_234_567.89);
+  assert.equal(parsePesosTexto("$85.000"), 85_000);
+  assert.equal(parsePesosTexto("8500"), 8500);
+  assert.equal(parsePesosTexto("8500,50"), 8500.5);
+  assert.equal(parsePesosTexto("ocho mil"), null);
+  assert.equal(parsePesosTexto("20.000.000"), null); // pasa el tope propio
+  // El tope del vault no queda limitado por MAX_COBRO_PESOS (1M): 5M entra, 20M no.
+  assert.equal(pesosToWei(5_000_000, MAX_TOPE_PESOS), 5_000_000n * 10n ** 18n);
+  assert.throws(() => pesosToWei(20_000_000, MAX_TOPE_PESOS));
+});
+
+test("dos direcciones pegadas no disparan la alarma de secreto", () => {
+  const hex = "a".repeat(64);
+  assert.equal(looksLikeSecret(`mirá esto ${hex} y nada más`), true);
+  assert.equal(looksLikeSecret(`${hex}${"b".repeat(64)}`), false); // 128 hex: no es una clave aislada
+  assert.equal(looksLikeSecret(`0x${"1".repeat(40)}0x${"2".repeat(40)}`), false);
 });
