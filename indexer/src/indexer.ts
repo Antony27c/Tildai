@@ -25,7 +25,7 @@ export interface ChainReader {
   getLogs(p: { address: string; event: typeof transferEvent; args: { to: string[] }; fromBlock: bigint; toBlock: bigint }): Promise<TransferLog[]>;
 }
 
-export type Sale = { id: string; vault: string; amount: bigint; status: 'pendiente' | 'cobrada'; paymentId?: string };
+export type Sale = { id: string; vault: string; amount: bigint; createdBlock: bigint; status: 'pendiente' | 'cobrada'; paymentId?: string };
 export type Payment = { id: string; vault: string; from: string; amount: bigint; block: bigint; txHash: string; saleId?: string };
 
 // shortcut: store en memoria, se pierde al reiniciar; cambiar por DB antes de usarlo con plata real.
@@ -34,7 +34,7 @@ export class Store {
   payments = new Map<string, Payment>();
   cursor: bigint | null = null;
 
-  addSale(s: { id: string; vault: string; amount: bigint }): Sale {
+  addSale(s: { id: string; vault: string; amount: bigint; createdBlock: bigint }): Sale {
     if (this.sales.has(s.id)) throw new Error(`venta duplicada: ${s.id}`);
     if (s.amount <= 0n) throw new Error('el monto debe ser positivo');
     const sale: Sale = { ...s, vault: s.vault.toLowerCase(), status: 'pendiente' };
@@ -66,7 +66,7 @@ export type IndexerOpts = {
 function reconcile(store: Store, p: Payment): boolean {
   if (p.saleId) return false;
   for (const s of store.sales.values()) {
-    if (s.status === 'pendiente' && s.vault === p.vault && s.amount === p.amount) {
+    if (s.status === 'pendiente' && s.vault === p.vault && s.amount === p.amount && p.block >= s.createdBlock) {
       s.status = 'cobrada';
       s.paymentId = p.id;
       p.saleId = s.id;
@@ -129,5 +129,10 @@ export function createIndexer(o: IndexerOpts) {
     }
   }
 
-  return { pollOnce, watch };
+  // Si el RPC falla no se crea la venta: sin bloque de creación no se puede conciliar con seguridad.
+  async function createSale(s: { id: string; vault: string; amount: bigint }): Promise<Sale> {
+    return o.store.addSale({ ...s, createdBlock: await o.client.getBlockNumber() });
+  }
+
+  return { pollOnce, watch, createSale };
 }
