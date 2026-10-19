@@ -5,7 +5,7 @@ import { agentClients } from "./chain.ts";
 import { ChainVault } from "./chainVault.ts";
 import { SalesBook } from "./sales.ts";
 import { FakeVault, type Vault } from "./vault.ts";
-import { VaultOps } from "./vaultOps.ts";
+import { VaultOps, type Fx } from "./vaultOps.ts";
 
 const network = process.env.TILDAI_NETWORK === "celoSepolia" ? "celoSepolia" : "celo";
 const vaultAddress = process.env.TILDAI_VAULT as Address | undefined;
@@ -40,3 +40,9 @@ export function vaultOps() {
   if (!ops) ops = new VaultOps({ vault: vaultAddress, feeCurrency: network === "celo" ? USDT_FEE_ADAPTER : undefined, ...agentClients(network, need("AGENT_PRIVATE_KEY") as Hex) });
   return ops;
 }
+
+// shortcut: fx/ has its own package.json and node_modules; loaded lazily so the agent runs without it until the first dolarizar. Move it into a workspace when the repo gets one.
+export const fx: Fx = {
+  cotizar: async (monto) => (await import("../../fx/index.ts")).cotizar(monto),
+  cotizarFirme: async (p) => (await import("../../fx/index.ts")).cotizarFirme(p),
+};
