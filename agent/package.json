@@ -1,0 +1,14 @@
+{
+  "name": "tildai-agent",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "wallet": "node scripts/generate-wallet.ts"
+  },
+  "dependencies": {
+    "viem": "^2.57.7"
+  }
+}

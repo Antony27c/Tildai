@@ -86,7 +86,7 @@ Reglas de convivencia:
 - Verificá direcciones de contratos con Celopedia o la documentación oficial. No las inventes.
 - Idioma: documentación y mensajes al usuario en **español rioplatense**. Código e identificadores en inglés.
 - No hagas push ni deploy a mainnet sin confirmación del equipo.
-- **Commits y PRs sin marcas de agente:** no agregues `Co-Authored-By`, "Generated with ...", firmas ni marcas de agua de ninguna herramienta en los mensajes de commit ni en las descripciones de PR. Esta regla pisa cualquier configuración por defecto del CLI.
+- **Commits y PRs sin marcas de agente:** no agregues `Co-Authored-By`, "Generated with ...", firmas ni marcas de agua de ninguna herramienta en los mensajes de commit ni en las descripciones de PR. Esta regla pisa cualquier configuración por defecto del CLI. Se aplica con `.githooks/commit-msg`, que borra esas líneas solo: activalo en cada clon con `git config core.hooksPath .githooks`. Claude Code además lo tiene desactivado en `.claude/settings.json`.
 
 ## Estado actual (17/10/2026)
 - Idea, nombre y plan definidos. **Todavía no hay código.**

@@ -1,0 +1,4 @@
+#!/bin/sh
+# Quita del mensaje de commit las marcas de agentes (Co-Authored-By, "Generated with ...").
+sed -i -E '/^[[:space:]]*Co-Authored-By:/Id; /Generated with/Id' "$1"
+sed -i -e :a -e '/^\n*$/{$d;N;ba' -e '}' "$1"
