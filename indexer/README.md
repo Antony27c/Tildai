@@ -1,6 +1,8 @@
 # Indexer de Tildai
 
-Indexa `Transfer` de wARS hacia los vaults (descubiertos vía `VaultCreated` de la factory) y concilia ventas. Corre con `npm start`.
+Indexa `Transfer` de wARS hacia los vaults (descubiertos vía `VaultCreated` de la factory) y concilia ventas. Corre con `npm start`; tests con `npm test` (`TILDAI_OFFLINE=1` saltea el test contra Sepolia).
+
+Variables: `TILDAI_INDEXER_TOKEN` (mín. 16 caracteres) y `TILDAI_STORE_PATH` (JSON donde persiste el estado) obligatorias; `TILDAI_NETWORK` (`celo` por defecto o `celo-sepolia`); en mainnet además `TILDAI_FACTORY` y `TILDAI_FROM_BLOCK` (en Sepolia salen de `contracts/deployments/celo-sepolia.json`). Opcionales: `TILDAI_WARS`, `RPC_URL`, `TILDAI_POLL_SECONDS` (10), `TILDAI_PORT` (8787), `TILDAI_HOST` (127.0.0.1).
 
 ## Correr en un server
 

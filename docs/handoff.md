@@ -46,8 +46,15 @@ Quien lea esto toma el rol de **coordinador** de Tildai: reparte tareas a los ag
 El dueño decidió **no comprar USD₮ por ahora** (18/10). Cuando cambie de opinión, en orden:
 
 1. Fondear `0x2B7c25FedB6d09e149fedc1ffE35529b1cab1f65` con 2–3 USD₮ en Celo mainnet (compra en Ripio, retiro por red Celo).
-2. `cd agent && set CONFIRM_MAINNET=1 && node scripts/register-8004.ts celo` — registra la identidad ERC-8004 (registry `0x8004A169FB4a3325136EB29fA0ceB6D2e539a432`).
-3. `cd agent && set CONFIRM_MAINNET=1 && node scripts/deploy-mainnet.ts` — factory + vault. Paga gas en USD₮ por fee abstraction.
+2. Registrar la identidad ERC-8004 (registry `0x8004A169FB4a3325136EB29fA0ceB6D2e539a432`). Desde `agent/`:
+   - PowerShell: `$env:CONFIRM_MAINNET="1"; node scripts/register-8004.ts celo`
+   - cmd: `set "CONFIRM_MAINNET=1"` y después `node scripts/register-8004.ts celo`
+   - Ojo: `set CONFIRM_MAINNET=1 && ...` en cmd guarda `"1 "` (con espacio) y en PowerShell `set` no toca el entorno: en los dos casos el script hace solo dry run.
+3. Desplegar la factory (solo la factory: el primer vault sale del `/start`). Antes, `forge build --force` en `contracts/` desde un checkout limpio. Primero el dry run (`node scripts/deploy-mainnet.ts`, sin la variable) y después, desde `agent/`:
+   - PowerShell: `$env:CONFIRM_MAINNET="1"; node scripts/deploy-mainnet.ts`
+   - cmd: `set "CONFIRM_MAINNET=1"` y después `node scripts/deploy-mainnet.ts`
+   - Paga gas en USD₮ por fee abstraction. Guarda `factoryTx`, commit y hash del bytecode en `contracts/deployments/celo.json` apenas envía; si se corta, volver a correrlo busca el recibo en vez de redesplegar.
+   - Al terminar, `Remove-Item Env:CONFIRM_MAINNET` (PowerShell) o `set "CONFIRM_MAINNET="` (cmd).
 4. Falta `X402_API_KEY` del facilitador de mainnet (pedirla) y crear el proyecto en Loops (`loops project fields --event agents-on-open-rails`, `project create` sin `--confirm`, mostrarlo al dueño primero).
 5. Primer swap real en Textile: chico, el corredor wARS/USD₮ tiene volumen casi nulo.
 
