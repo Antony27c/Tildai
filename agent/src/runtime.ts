@@ -2,7 +2,7 @@ import { createPublicClient, http, type Address, type Hex } from "viem";
 import { celo, celoSepolia } from "viem/chains";
 
 import { agentClients } from "./chain.ts";
-import { ChainVault } from "./chainVault.ts";
+import { ChainVault, type Balances } from "./chainVault.ts";
 import { SalesBook } from "./sales.ts";
 import { FakeVault, type Vault } from "./vault.ts";
 import { ChatVaultRegistry, CreadorVault } from "./alta.ts";
@@ -44,20 +44,39 @@ export function vaultDelChat(ctx: ToolCtx): { address: Address; fromBlock: bigin
 let reader: ReturnType<typeof createPublicClient> | undefined;
 const publicReader = () => (reader ??= createPublicClient({ chain: network === "celo" ? celo : celoSepolia, transport: http() }));
 
-const books = new Map<string, SalesBook>();
+const books = new Map<string, { book: SalesBook; balances: () => Promise<Balances> }>();
+/** Book and onchain balances for one vault, cached by address (used by tools and by the daily close). */
+export function datosDelVault(v: { address: Address; fromBlock: bigint }) {
+  let e = books.get(v.address);
+  if (!e) {
+    const cv = new ChainVault({ address: v.address, reader: publicReader(), fromBlock: v.fromBlock });
+    books.set(v.address, (e = { book: new SalesBook(cv), balances: () => cv.balances() }));
+  }
+  return e;
+}
+
 export function bookDelChat(ctx: ToolCtx): SalesBook {
-  const v = vaultDelChat(ctx);
-  let b = books.get(v.address);
-  if (!b) books.set(v.address, (b = new SalesBook(new ChainVault({ address: v.address, reader: publicReader(), fromBlock: v.fromBlock }))));
-  return b;
+  return datosDelVault(vaultDelChat(ctx)).book;
 }
 
 const opsByVault = new Map<string, VaultOps>();
-export function opsDelChat(ctx: ToolCtx): VaultOps {
-  const { address } = vaultDelChat(ctx);
+export function opsDelVault(address: Address): VaultOps {
   let o = opsByVault.get(address);
   if (!o) opsByVault.set(address, (o = new VaultOps({ vault: address, feeCurrency: network === "celo" ? USDT_FEE_ADAPTER : undefined, ...agentClients(network, need("AGENT_PRIVATE_KEY") as Hex) })));
   return o;
+}
+export function opsDelChat(ctx: ToolCtx): VaultOps {
+  return opsDelVault(vaultDelChat(ctx).address);
+}
+
+/** Vaults to close at 21:00 ART: every chat→vault in the registry, plus the env vault of the owner chat if it isn't registered. */
+export function vaultsACerrar(): { chatId: string; vault: { address: Address; fromBlock: bigint } }[] {
+  const jobs = chatRegistry().conVault().map((e) => ({ chatId: e.chatId, vault: { address: e.vault, fromBlock: e.fromBlock } }));
+  const owner = process.env.TILDAI_OWNER_CHAT_ID;
+  if (vaultAddress && owner && !jobs.some((j) => j.chatId === owner || j.vault.address === vaultAddress)) {
+    jobs.push({ chatId: owner, vault: { address: vaultAddress, fromBlock: BigInt(need("TILDAI_FROM_BLOCK")) } });
+  }
+  return jobs;
 }
 
 // shortcut: one vault per process, taken from TILDAI_VAULT; without it reads use the in-memory fake and writes are disabled. Use the factory registry per merchant.
@@ -97,12 +116,17 @@ export function creadorVault() {
   const factory = process.env.TILDAI_FACTORY as Address | undefined;
   if (!factory) throw new Error("Falta TILDAI_FACTORY: no puedo dar de alta el comercio");
   if (!creador) {
+    const maxAltas = Number(process.env.TILDAI_MAX_ALTAS_DIA ?? "5");
+    const pendienteMin = Number(process.env.TILDAI_ALTA_PENDIENTE_MIN ?? "30");
     creador = new CreadorVault({
       registry: chatRegistry(),
       factory,
       fromBlock: BigInt(need("TILDAI_FROM_BLOCK")),
       feeCurrency: network === "celo" ? USDT_FEE_ADAPTER : undefined,
       payBaseUrl: payBaseUrl(),
+      // Un tope inválido cierra las altas (0): ante la duda no se gasta gas.
+      maxAltasDia: Number.isFinite(maxAltas) && maxAltas >= 0 ? Math.floor(maxAltas) : 0,
+      pendienteMin: Number.isFinite(pendienteMin) && pendienteMin > 0 ? Math.floor(pendienteMin) : 30,
       ...agentClients(network, need("AGENT_PRIVATE_KEY") as Hex),
     });
   }

@@ -1,5 +1,7 @@
+import type { Address } from "viem";
+
 import { formatPesos } from "./money.ts";
-import { diaISO, type SalesBook } from "./sales.ts";
+import { cierreCaja, diaISO, type SalesBook } from "./sales.ts";
 import type { BucketName, OpRecord, VaultOps } from "./vaultOps.ts";
 
 type Bps = { ahorro: bigint; impuestos: bigint };
@@ -73,4 +75,38 @@ export async function apartadoCierre(a: {
     }
   }
   return { texto: lineas.join("\n"), records };
+}
+
+/**
+ * Daily close for every registered vault, one message per chat. A failure in one close is logged and reported
+ * to that chat, and the rest still run. Idempotency is unchanged: apartadoCierre reuses 'cierre:<fecha AR>:<bucket>' opIds per vault.
+ */
+export async function cierreDeTodos(a: {
+  jobs: { chatId: string; vault: { address: Address; fromBlock: bigint } }[];
+  datos: (v: { address: Address; fromBlock: bigint }) => { book: SalesBook; balances: () => Promise<{ operating: bigint; paused: boolean }> };
+  ops: (address: Address) => Pick<VaultOps, "apartar">;
+  env: { savings?: string; taxes?: string };
+  send: (chatId: string, texto: string) => unknown;
+}): Promise<void> {
+  for (const j of a.jobs) {
+    try {
+      const { book, balances } = a.datos(j.vault);
+      const { resumen } = await cierreCaja(book);
+      let apartado: string;
+      try {
+        apartado = (await apartadoCierre({ book, ops: a.ops(j.vault.address), balances, env: a.env })).texto;
+      } catch (err) {
+        console.error(`[tildai] ALERTA cierre: falló el apartado del chat ${j.chatId}`, err);
+        apartado = `No aparté nada: ${(err as Error).message}`;
+      }
+      await a.send(j.chatId, `Enviale al dueño este resumen tal cual, sin cambiar cifras:\n\n${resumen}\n\nApartado:\n${apartado}`);
+    } catch (err) {
+      console.error(`[tildai] ALERTA cierre del chat ${j.chatId}: ${(err as Error).message}`, err);
+      try {
+        await a.send(j.chatId, `Avisale al dueño que el cierre de caja de hoy falló y que hay que revisarlo: ${(err as Error).message}`);
+      } catch (e2) {
+        console.error(`[tildai] ALERTA cierre: tampoco se pudo avisar al chat ${j.chatId}`, e2);
+      }
+    }
+  }
 }

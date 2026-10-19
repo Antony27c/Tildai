@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import { parseUnits, type Address, type Hex } from "viem";
 
-import { apartadoCierre, parsePcts } from "../src/cierreApartado.ts";
+import { apartadoCierre, cierreDeTodos, parsePcts } from "../src/cierreApartado.ts";
 import { pesosToWei } from "../src/money.ts";
 import { SalesBook } from "../src/sales.ts";
 import { FakeVault } from "../src/vault.ts";
@@ -137,6 +137,51 @@ test("error de escritura: avisa, registra, corta y no reintenta", async () => {
   assert.equal(c.alerts.length, 1);
   assert.match(r.texto, /NO se pudo apartar \(IsPaused\)/);
   assert.match(r.texto, /Corté acá/);
+});
+
+test("cierre general: un cierre por vault a su chat; una falla no frena a los demás", async () => {
+  const V1 = "0x00000000000000000000000000000000000000a1" as Address;
+  const V2 = "0x00000000000000000000000000000000000000a2" as Address;
+  const V3 = "0x00000000000000000000000000000000000000a3" as Address;
+  // Un chain por vault: usedOp es por contrato, la idempotencia no se mezcla entre comercios.
+  const chains = new Map<string, ReturnType<typeof chain>>();
+  const opsDe = (address: Address) => {
+    let ch = chains.get(address);
+    if (!ch) chains.set(address, (ch = chain()));
+    return ch.ops;
+  };
+  const sent: { chatId: string; texto: string }[] = [];
+  const orig = console.error;
+  console.error = () => {};
+  try {
+    await cierreDeTodos({
+      jobs: [
+        { chatId: "c1", vault: { address: V1, fromBlock: 0n } },
+        { chatId: "c2", vault: { address: V2, fromBlock: 0n } },
+        { chatId: "c3", vault: { address: V3, fromBlock: 0n } },
+      ],
+      datos: (v) => {
+        if (v.address === V2) throw new Error("vault roto");
+        return { book: bookWith(1000), balances: bal(pesosToWei(1000)) };
+      },
+      ops: opsDe,
+      env,
+      send: (chatId, texto) => sent.push({ chatId, texto }),
+    });
+  } finally {
+    console.error = orig;
+  }
+  assert.equal(sent.length, 3);
+  assert.equal(sent[0].chatId, "c1");
+  assert.match(sent[0].texto, /Cierre de caja/);
+  assert.match(sent[0].texto, /ahorro: \$100 apartados/);
+  assert.equal(sent[1].chatId, "c2");
+  assert.match(sent[1].texto, /cierre de caja de hoy falló.*vault roto/);
+  assert.equal(sent[2].chatId, "c3");
+  assert.match(sent[2].texto, /Cierre de caja/);
+  assert.equal(chains.get(V1)!.writes.length, 2); // ahorro + impuestos
+  assert.equal(chains.get(V2), undefined); // el vault roto nunca llegó a escribir
+  assert.equal(chains.get(V3)!.writes.length, 2);
 });
 
 test("mainnet: la escritura lleva feeCurrency (adapter de USD₮); sin feeCurrency en Sepolia", async () => {
