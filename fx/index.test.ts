@@ -151,3 +151,19 @@ test('cotizar: maneja error envelope retornado por Textile', async () => {
     /Textile FX API Error: Token not supported/
   );
 });
+
+test('cotizar: aborta por timeout cuando un fetch falso nunca responde', async () => {
+  // Fetch falso que nunca responde y espera el evento abort del AbortSignal
+  const hangingFetch = async (_url: string | URL | Request, init?: RequestInit): Promise<Response> => {
+    return new Promise((_, reject) => {
+      init?.signal?.addEventListener('abort', () => {
+        reject(init.signal?.reason ?? new Error('Aborted'));
+      });
+    });
+  };
+
+  await assert.rejects(
+    async () => cotizar('1000', { fetchFn: hangingFetch as typeof fetch, timeoutMs: 50 }),
+    (err: any) => err.name === 'TimeoutError' || /timeout|aborted/i.test(err.message)
+  );
+});

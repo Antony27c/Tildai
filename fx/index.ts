@@ -2,7 +2,7 @@ import { formatUnits, parseUnits } from 'viem';
 
 /**
  * Constantes oficiales para Textile FX en Celo Mainnet
- * Fuente: https://docs.textilecredit.com/developers/address-book
+ * Fuente: https://docs.textilecredit.com/protocol/address-book.html
  */
 export const CELO_CHAIN_ID = 42220;
 
@@ -43,6 +43,8 @@ export interface CotizarOptions {
   fetchFn?: typeof fetch;
   /** URL base de la API de Textile (por defecto TEXTILE_API_URL) */
   apiBaseUrl?: string;
+  /** Timeout en milisegundos para la solicitud HTTP (por defecto 8000 ms) */
+  timeoutMs?: number;
 }
 
 /**
@@ -62,7 +64,7 @@ function toAtomicWars(monto: bigint | string | number): bigint {
  * Usa el endpoint POST /v2/rfq/preview sin custodiar fondos ni requerir claves.
  *
  * @param monto Monto en wARS a dolarizar (ej: 1000 o "1000" para 1000 wARS, o bigint en wei)
- * @param options Opciones de configuración o inyección de fetch para pruebas
+ * @param options Opciones de configuración (timeout, inyección de fetch para pruebas)
  */
 export async function cotizar(
   monto: bigint | string | number,
@@ -76,6 +78,8 @@ export async function cotizar(
   const customFetch = options?.fetchFn ?? fetch;
   const baseUrl = (options?.apiBaseUrl ?? TEXTILE_API_URL).replace(/\/$/, '');
   const url = `${baseUrl}/v2/rfq/preview`;
+  const timeoutMs = options?.timeoutMs ?? 8000;
+  const signal = AbortSignal.timeout(timeoutMs);
 
   const payload = {
     chainId: CELO_CHAIN_ID,
@@ -91,6 +95,7 @@ export async function cotizar(
       Accept: 'application/json',
     },
     body: JSON.stringify(payload),
+    signal,
   });
 
   if (!response.ok) {
