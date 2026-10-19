@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { checkVault } from "../../lib/vaults.ts";
-import { byDay, fetchPanel, formatHoraAR, formatPesos, parseDia, periodRangeAR, readVaultBalance, summarize } from "../../lib/panel.ts";
+import { byDay, fetchPanel, formatDiaHoraAR, formatHoraAR, formatPesos, parseDia, periodRangeAR, readVaultBalance, summarize } from "../../lib/panel.ts";
 import styles from "./panel.module.css";
 
 export const dynamic = "force-dynamic";
@@ -65,7 +65,7 @@ export default async function PanelPage({ searchParams }: { searchParams: Promis
       </nav>
 
       <section className={styles.stats}>
-        <div className={styles.card}>
+        <div className={`${styles.card} ${styles.cardWide}`}>
           <p className={styles.label}>{dia === "hoy" ? "Cobrado hoy" : "Cobrado"}</p>
           <p className={styles.big}>$ {formatPesos(s.totalWei)}</p>
         </div>
@@ -82,7 +82,11 @@ export default async function PanelPage({ searchParams }: { searchParams: Promis
         </div>
         <div className={styles.card}>
           <p className={styles.label}>Saldo del vault</p>
-          <p className={styles.big}>{balance === null ? "No disponible" : `$ ${formatPesos(balance)}`}</p>
+          {balance === null ? (
+            <p className={styles.unavailable}>No disponible</p>
+          ) : (
+            <p className={styles.big}>$ {formatPesos(balance)}</p>
+          )}
         </div>
       </section>
 
@@ -94,7 +98,7 @@ export default async function PanelPage({ searchParams }: { searchParams: Promis
               <li key={d.daySince} className={styles.row}>
                 <span>{diaFmt.format(d.daySince)}</span>
                 <span className={styles.amount}>$ {formatPesos(d.totalWei)}</span>
-                <span className={styles.mono}>
+                <span className={styles.num}>
                   {d.count} {d.count === 1 ? "pago" : "pagos"}
                 </span>
               </li>
@@ -106,12 +110,14 @@ export default async function PanelPage({ searchParams }: { searchParams: Promis
       <section>
         <h2 className={styles.sectionTitle}>Cobros</h2>
         {pagos.length === 0 ? (
-          <p className={styles.note}>{dia === "hoy" ? "Todavía no entró plata hoy." : "No hubo cobros en este período."}</p>
+          <p className={styles.muted}>{dia === "hoy" ? "Todavía no entró plata hoy." : "No hubo cobros en este período."}</p>
         ) : (
           <ul className={styles.list}>
             {pagos.map((p) => (
               <li key={p.id} className={styles.row}>
-                <span className={styles.mono}>{p.timestamp === null ? "--:--" : formatHoraAR(p.timestamp)}</span>
+                <span className={styles.num}>
+                  {p.timestamp === null ? "--:--" : dia === "7d" ? formatDiaHoraAR(p.timestamp) : formatHoraAR(p.timestamp)}
+                </span>
                 <span className={styles.amount}>$ {formatPesos(p.amount)}</span>
                 <a className={styles.link} href={`https://celoscan.io/tx/${p.txHash}`} target="_blank" rel="noreferrer">
                   ver tx

@@ -55,14 +55,18 @@ export function byDay(payments: PanelPayment[], since: number, until: number) {
 const PESO = 10n ** 18n;
 const intFmt = new Intl.NumberFormat("es-AR", { maximumFractionDigits: 0 });
 
-// wARS (18 decimales) → "1.234,56". Sin float: redondeo al centavo más cercano con bigint.
+// wARS (18 decimales) → "1.234,56". Sin float: trunca al centavo, nunca muestra más plata de la que entró.
 export function formatPesos(wei: string | bigint): string {
-  const cents = (BigInt(wei) * 100n + PESO / 2n) / PESO;
+  const cents = (BigInt(wei) * 100n) / PESO;
   return `${intFmt.format(cents / 100n)},${(cents % 100n).toString().padStart(2, "0")}`;
 }
 
 const horaFmt = new Intl.DateTimeFormat("es-AR", { timeZone: "America/Argentina/Buenos_Aires", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 export const formatHoraAR = (ms: number): string => horaFmt.format(ms);
+
+const diaCortoFmt = new Intl.DateTimeFormat("es-AR", { timeZone: "America/Argentina/Buenos_Aires", day: "2-digit", month: "2-digit" });
+// "dd/mm HH:MM" en hora argentina, para listas que abarcan más de un día.
+export const formatDiaHoraAR = (ms: number): string => `${diaCortoFmt.format(ms)} ${horaFmt.format(ms)}`;
 
 const digits = (x: unknown): x is string => typeof x === "string" && /^\d+$/.test(x);
 const isSale = (x: any): x is PanelSale =>

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { byDay, dayRangeAR, fetchPanel, formatHoraAR, formatPesos, parseDia, periodRangeAR, readVaultBalance, summarize } from "./panel.ts";
+import { byDay, dayRangeAR, fetchPanel, formatDiaHoraAR, formatHoraAR, formatPesos, parseDia, periodRangeAR, readVaultBalance, summarize } from "./panel.ts";
 import { WARS } from "./wars.ts";
 
 const DAY = 86_400_000;
@@ -75,17 +75,19 @@ test("byDay: una fila por día del rango, más nuevo primero, días vacíos en 0
   for (const i of [2, 3, 5, 6]) assert.deepEqual({ totalWei: days[i].totalWei, count: days[i].count }, { totalWei: 0n, count: 0 });
 });
 
-test("formatPesos: wei (18 dec) a pesos es-AR, sin float", () => {
+test("formatPesos: wei (18 dec) a pesos es-AR, trunca al centavo (sin float)", () => {
   assert.equal(formatPesos("0"), "0,00");
   assert.equal(formatPesos("1500000000000000000"), "1,50");
-  assert.equal(formatPesos("12345678900000000000000"), "12.345,68");
-  assert.equal(formatPesos("1005000000000000000"), "1,01"); // redondea al centavo, no trunca
+  assert.equal(formatPesos("12345678900000000000000"), "12.345,67");
+  assert.equal(formatPesos("999000000000000000"), "0,99"); // 0,999 wARS → $0,99, nunca $1,00
+  assert.equal(formatPesos("1005000000000000000"), "1,00"); // 1,005 → trunca a 1,00
   assert.equal(formatPesos(5n * 10n ** 17n), "0,50");
 });
 
-test("formatHoraAR: hora argentina en HH:MM", () => {
+test("formatHoraAR y formatDiaHoraAR: hora argentina", () => {
   assert.equal(formatHoraAR(0), "21:00"); // epoch UTC = 21:00 AR del día anterior
-  assert.match(formatHoraAR(Date.UTC(2026, 9, 19, 15, 7)), /^12:07$/);
+  assert.equal(formatHoraAR(Date.UTC(2026, 9, 19, 15, 7)), "12:07");
+  assert.equal(formatDiaHoraAR(Date.UTC(2026, 9, 19, 15, 7)), "19/10 12:07");
 });
 
 test("summarize: total en wei, cantidad de pagos, cobradas vs pendientes", () => {

@@ -39,8 +39,11 @@
 
 .tab,
 .tabActive {
-  padding: var(--s1, 4px) var(--s3, 12px);
-  border-radius: var(--radius, 12px);
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 var(--s4, 16px);
+  border-radius: 999px;
   border: 1px solid var(--border, #e3e5ea);
   text-decoration: none;
   font-size: 0.9rem;
@@ -66,21 +69,25 @@
   border: 1px solid var(--border, #e3e5ea);
   border-radius: var(--radius, 12px);
   padding: var(--s4, 16px);
+  min-width: 0;
+}
+
+.cardWide {
+  grid-column: 1 / -1;
 }
 
 .label {
   margin: 0 0 var(--s1, 4px);
-  font-size: 0.75rem;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-size: 0.85rem;
   color: var(--muted, #666);
 }
 
 .big {
   margin: 0;
-  font-size: 1.75rem;
+  font-size: clamp(1.25rem, 6vw, 1.75rem);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
 }
 
 .small {
@@ -120,10 +127,22 @@
   border-top: 1px solid var(--border, #e3e5ea);
 }
 
-.mono {
-  font-family: var(--font-mono, ui-monospace, monospace);
+.num {
+  font-variant-numeric: tabular-nums;
   color: var(--muted, #666);
   font-size: 0.9rem;
+}
+
+.muted {
+  margin: var(--s1, 4px) 0 0;
+  color: var(--muted, #666);
+}
+
+.unavailable {
+  margin: var(--s2, 8px) 0 0;
+  color: var(--muted, #666);
+  font-size: 1rem;
+  font-weight: 600;
 }
 
 .amount {
