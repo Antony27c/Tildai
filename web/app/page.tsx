@@ -1,12 +1,14 @@
 import { headers } from "next/headers";
 import { QRCodeSVG } from "qrcode.react";
 import AmountForm from "./AmountForm.tsx";
+import Landing from "./Landing.tsx";
 import { parseAmount } from "../lib/ripio.ts";
 import { parseSale } from "../lib/sale.ts";
 import { checkVault } from "../lib/vaults.ts";
 
 export default async function Page({ searchParams }: { searchParams: Promise<{ vault?: string; amount?: string; sale?: string }> }) {
   const { vault, amount, sale } = await searchParams;
+  if (vault === undefined && amount === undefined && sale === undefined) return <Landing />;
   const parsedSale = parseSale(sale);
   if (!parsedSale.ok) {
     return <main style={{ padding: 24 }}>Este link de cobro no es válido. Pedile al comercio que te pase el QR de nuevo.</main>;
