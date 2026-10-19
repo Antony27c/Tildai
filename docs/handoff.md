@@ -24,13 +24,13 @@ También pendiente: apartado de ahorro e impuestos, dolarización, x402 real (Pe
 - Las skills de Loops House están sin commit en la carpeta del Desktop (`.agents/` y `.claude/skills/loops-agents-on-open-rails`).
 
 ## Tareas en curso (18/10, todas parten de `origin/Antony27c/Tildai`)
-| Agente | Tarea |
-|---|---|
-| `devin-agent` | Vault real con viem en `agent/`: lectura de Transfer y saldos, `allocate`/`withdraw` con `opId` y `chain.ts`, tools `apartar` y `retirar` |
-| `devin-indexer` | Descubrir vaults desde `TildaiFactory` (`VaultCreated`), getLogs por tramos con reintentos y confirmaciones |
-| `devin-web` | `isVault` onchain en lugar de `TILDAI_VAULTS` y x402 real (Permit2, facilitador, sin pagos simulados) |
-| `gemini-textile` | Cotización firme de Textile con API key de partner y validación, convertida en argumentos de `vault.swap` |
-| Coordinador | Registro ERC-8004 del agente y deploy a mainnet (con OK del dueño) |
+| Agente | Hecho y revisado | En curso |
+|---|---|---|
+| `devin-agent` | Vault real (`ChainVault`, `VaultOps` con `opId`), tools `apartar` y `retirar` | `feeCurrency` USD₮ en mainnet; apartado automático en el cierre de caja |
+| `devin-indexer` | Vaults desde `VaultCreated`, tramos, reintentos y confirmaciones | Persistencia en JSON; conciliación por hash de tx (x402) |
+| `devin-web` | `isVault` onchain; x402 con Permit2 y `/api/pay` | Versiones exactas de `@x402/*`; rechazar x402 fuera de mainnet; verificar header de API key y `eip2612GasSponsoring`; parámetro `sale` |
+| `gemini-textile` | `cotizarFirme` (primera versión) | Leer `data.quote` (la forma real de la API), una sola firma, `maxRate` entero, `previewRate` obligatorio |
+| Coordinador | Script ERC-8004 probado en Sepolia (agentId 626) | Registro en mainnet y deploy a mainnet (con OK del dueño y gas en USD₮) |
 
 ## Cómo se trabaja
 - **Un worktree por agente**, carpeta `C:/Users/pansi/orca/workspaces/BuilderSession/<nombre>`, rama `Antony27c/<nombre>`: `devin-agent`, `devin-web`, `devin-indexer`, `gemini-textile`, y `Tildai` (coordinador). Los viejos `copepod`, `triggerfish`, `rosefish`, `hind` y `lookdown` parten del historial anterior a la reescritura: no los uses sin moverlos al `main` nuevo.
