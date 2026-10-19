@@ -573,3 +573,8 @@
   font-size: 0.85rem;
   max-width: 60ch;
 }
+
+.footerCredits a {
+  color: inherit;
+  text-underline-offset: 0.2em;
+}

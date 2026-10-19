@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
+import Tick from "./cobro/Tick.tsx";
 import styles from "./Landing.module.css";
 
 const BOT_URL = process.env.NEXT_PUBLIC_TELEGRAM_BOT_URL;
@@ -14,22 +15,6 @@ const reveal = (delay = 0) =>
     "data-reveal": boolean;
     style: CSSProperties;
   };
-
-function Tick({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 16 16" className={className} aria-hidden="true" focusable="false">
-      <path
-        d="M3 8.5 6.5 12 13 4.5"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2.2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        pathLength={1}
-      />
-    </svg>
-  );
-}
 
 function Torn({ up }: { up?: boolean }) {
   const w = 480;
@@ -218,16 +203,16 @@ export default function Landing() {
             </h2>
             <ul className={styles.facts}>
               <li {...reveal(160)}>
-                <strong>Apartá ahorro e impuestos.</strong> Le decís qué porcentaje separar de cada
-                venta y Tildai lo aparta solo, todos los días.
+                <strong>Apartá ahorro e impuestos.</strong> Elegís qué porcentaje apartar al
+                configurarlo y Tildai lo separa en el cierre.
               </li>
               <li {...reveal(240)}>
-                <strong>El excedente puede pasar a dólares.</strong> Lo que sobra se dolariza para
-                que no se lo coma la inflación. Lo activás y lo pausás vos.
+                <strong>Pasalo a dólares cuando quieras.</strong> Cuando se lo pedís, pasa pesos a
+                dólares, con precio máximo y tope diario.
               </li>
               <li {...reveal(320)}>
-                <strong>Todo queda anotado.</strong> Cada movimiento queda registrado y te lo cuenta
-                por Telegram, en criollo.
+                <strong>Todo queda anotado.</strong> Cada movimiento queda en la cadena y te lo
+                confirma en el chat.
               </li>
             </ul>
           </div>
@@ -263,7 +248,7 @@ export default function Landing() {
               </li>
               <li {...reveal(280)}>
                 <Tick className={styles.trustTick} />
-                <span>El agente solo mueve plata a donde vos le autorices, con un tope diario que elegís vos.</span>
+                <span>El agente solo mueve plata a donde vos le autorices, con un tope diario.</span>
               </li>
             </ul>
             <p className={styles.trustNote} {...reveal(360)}>
@@ -302,8 +287,19 @@ export default function Landing() {
             Celo.
           </p>
           <p className={styles.footerCredits}>
-            Fotos: “Almacén Don Manolo en San Telmo” de ProtoplasmaKid y “Tenta verdulería” de
-            Fernando Martello, CC BY-SA 4.0, vía Wikimedia Commons.
+            Fotos:{" "}
+            <a href="https://commons.wikimedia.org/wiki/File:Almac%C3%A9n_Don_Manolo_en_San_Telmo.jpg" rel="noreferrer" target="_blank">
+              “Almacén Don Manolo en San Telmo”
+            </a>{" "}
+            de ProtoplasmaKid y{" "}
+            <a href="https://commons.wikimedia.org/wiki/File:Tenta_verduleria_fashion_martinez.jpg" rel="noreferrer" target="_blank">
+              “Tenta verdulería”
+            </a>{" "}
+            de Fernando Martello,{" "}
+            <a href="https://creativecommons.org/licenses/by-sa/4.0" rel="noreferrer" target="_blank">
+              CC BY-SA 4.0
+            </a>
+            , vía Wikimedia Commons.
           </p>
         </div>
       </footer>
