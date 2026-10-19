@@ -23,6 +23,15 @@ También pendiente: apartado de ahorro e impuestos, dolarización, x402 real (Pe
 - Para la entrega: `loops project fields --event agents-on-open-rails`, luego `project create` **sin `--confirm`** (es un borrador), mostrárselo al dueño y confirmar solo con su sí explícito. Campo obligatorio: `agent-wallet`.
 - Las skills de Loops House están sin commit en la carpeta del Desktop (`.agents/` y `.claude/skills/loops-agents-on-open-rails`).
 
+## Tareas en curso (18/10, todas parten de `origin/Antony27c/Tildai`)
+| Agente | Tarea |
+|---|---|
+| `devin-agent` | Vault real con viem en `agent/`: lectura de Transfer y saldos, `allocate`/`withdraw` con `opId` y `chain.ts`, tools `apartar` y `retirar` |
+| `devin-indexer` | Descubrir vaults desde `TildaiFactory` (`VaultCreated`), getLogs por tramos con reintentos y confirmaciones |
+| `devin-web` | `isVault` onchain en lugar de `TILDAI_VAULTS` y x402 real (Permit2, facilitador, sin pagos simulados) |
+| `gemini-textile` | Cotización firme de Textile con API key de partner y validación, convertida en argumentos de `vault.swap` |
+| Coordinador | Registro ERC-8004 del agente y deploy a mainnet (con OK del dueño) |
+
 ## Cómo se trabaja
 - **Un worktree por agente**, carpeta `C:/Users/pansi/orca/workspaces/BuilderSession/<nombre>`, rama `Antony27c/<nombre>`: `devin-agent`, `devin-web`, `devin-indexer`, `gemini-textile`, y `Tildai` (coordinador). Los viejos `copepod`, `triggerfish`, `rosefish`, `hind` y `lookdown` parten del historial anterior a la reescritura: no los uses sin moverlos al `main` nuevo.
 - **Crear un hilo:** `orca worktree create --name X --repo "path:C:/Users/pansi/Desktop/BuilderSession" --base-branch origin/main --setup skip`, y luego `orca terminal create --worktree "path:<carpeta>" --title X --command "devin --permission-mode dangerous"`. Gemini: `--agent antigravity` al crear el worktree.
