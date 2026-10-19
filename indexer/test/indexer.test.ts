@@ -231,3 +231,70 @@ test('si el RPC falla al crear la venta no se crea', async () => {
   await assert.rejects(idx.createSale({ id: 's1', vault: V1, amount: 9n }));
   assert.equal(store.sales.size, 0);
 });
+
+const h = (n: number) => `0x${n.toString(16).padStart(64, '0')}`;
+
+test('x402: la tx con Transfer confirmado al vault por el monto exacto cobra la venta', async () => {
+  const { client, store, idx } = setup();
+  await sell(client, idx, { id: 's1', vault: V1, amount: 9n });
+  client.logs.push(tr(V1, 9n, 50n, h(1)));
+  await idx.pollOnce();
+  assert.equal(store.sales.get('s1')!.status, 'cobrada');
+  assert.equal(await idx.markPaidByTx('s1', h(1)), 'cobrada');
+});
+
+test('x402: la tx sin confirmar deja la venta pendiente y el próximo poll la cobra', async () => {
+  const { client, store, idx } = setup();
+  await sell(client, idx, { id: 's1', vault: V1, amount: 9n });
+  client.logs.push(tr(V1, 9n, 99n, h(1)));
+  await idx.pollOnce();
+  assert.equal(await idx.markPaidByTx('s1', h(1)), 'pendiente');
+  client.head = 101n;
+  await idx.pollOnce();
+  assert.equal(store.sales.get('s1')!.status, 'cobrada');
+  assert.equal(store.sales.get('s1')!.paymentId, `${h(1)}:0`);
+});
+
+test('x402: tx con monto o vault equivocado no cobra', async () => {
+  const { client, store, idx } = setup();
+  await sell(client, idx, { id: 's1', vault: V1, amount: 9n });
+  client.logs.push(tr(V1, 8n, 50n, h(1)), tr(V2, 9n, 51n, h(2)));
+  await idx.pollOnce();
+  assert.equal(await idx.markPaidByTx('s1', h(1)), 'pendiente');
+  assert.equal(await idx.markPaidByTx('s1', h(2)), 'pendiente');
+  assert.equal(await idx.markPaidByTx('s1', h(3)), 'pendiente');
+  await idx.pollOnce();
+  assert.equal(store.sales.get('s1')!.status, 'pendiente');
+});
+
+test('x402: el mismo pago no cobra dos ventas', async () => {
+  const { client, store, idx } = setup();
+  await sell(client, idx, { id: 's1', vault: V1, amount: 9n });
+  await sell(client, idx, { id: 's2', vault: V1, amount: 9n });
+  client.logs.push(tr(V1, 9n, 50n, h(1)));
+  await idx.pollOnce();
+  await idx.markPaidByTx('s1', h(1));
+  assert.equal(await idx.markPaidByTx('s2', h(1)), 'pendiente');
+  await idx.pollOnce();
+  assert.deepEqual([store.sales.get('s1')!.status, store.sales.get('s2')!.status], ['cobrada', 'pendiente']);
+});
+
+test('x402: una venta atada a una tx no la cobra otro pago de igual monto', async () => {
+  const { client, store, idx } = setup();
+  await sell(client, idx, { id: 's1', vault: V1, amount: 9n });
+  await idx.markPaidByTx('s1', h(1));
+  client.logs.push(tr(V1, 9n, 50n, h(2)));
+  await idx.pollOnce();
+  assert.equal(store.sales.get('s1')!.status, 'pendiente');
+});
+
+test('x402: entradas inválidas y venta ya cobrada con otro pago', async () => {
+  const { client, store, idx } = setup();
+  await sell(client, idx, { id: 's1', vault: V1, amount: 9n });
+  await assert.rejects(idx.markPaidByTx('nope', h(1)), /inexistente/);
+  await assert.rejects(idx.markPaidByTx('s1', '0xAA'), /inválido/);
+  client.logs.push(tr(V1, 9n, 50n, h(1)));
+  await idx.pollOnce();
+  await assert.rejects(idx.markPaidByTx('s1', h(2)), /otro pago/);
+  assert.equal(store.sales.get('s1')!.paymentId, `${h(1)}:0`);
+});
