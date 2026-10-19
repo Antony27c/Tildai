@@ -9,8 +9,8 @@
     "test": "node --test lib/*.test.ts"
   },
   "dependencies": {
-    "@x402/core": "^2.28.0",
-    "@x402/evm": "^2.28.0",
+    "@x402/core": "2.28.0",
+    "@x402/evm": "2.28.0",
     "next": "^16.4.2",
     "qrcode.react": "^4.2.0",
     "react": "^19.3.1",
