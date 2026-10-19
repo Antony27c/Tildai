@@ -19,7 +19,7 @@ export async function start(env: Record<string, string | undefined> = process.en
   const store = await loadStore(storePath);
   const indexer = createIndexer({ client: client ?? viemReader(cfg), store, factory: cfg.factory, token: cfg.wars, startBlock: cfg.startBlock, save: fileSaver(storePath) });
   // shortcut: sin TLS ni rate limit, escucha solo en localhost por defecto; ponerlo detrás de un proxy antes de exponerlo.
-  const server = createApp({ indexer, store, token });
+  const server = createApp({ indexer, store, token, chainId: cfg.chainId });
   await new Promise<void>((ok, fail) => server.once('error', fail).listen(port, env.TILDAI_HOST ?? '127.0.0.1', ok));
 
   const ctl = new AbortController();

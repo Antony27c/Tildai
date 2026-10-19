@@ -4,7 +4,7 @@ import { mkdtemp, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createIndexer, Store, parseWars, WARS, vaultCreatedEvent, type ChainReader, type Log } from '../src/indexer.ts';
-import { fileSaver, loadStore, saveStore } from '../src/persist.ts';
+import { deserialize, fileSaver, loadStore, saveStore, serialize } from '../src/persist.ts';
 
 const F = '0x00000000000000000000000000000000000000f0';
 const V1 = '0x00000000000000000000000000000000000000a1';
@@ -37,7 +37,7 @@ test('un reinicio conserva ventas, pagos, vaults y cursores, con bigint exactos'
   assert.deepEqual(b, a);
   assert.equal(b.sales.get('s1')!.status, 'cobrada');
   assert.equal(b.sales.get('s1')!.amount, 1234500000000000000000n);
-  assert.equal(b.sales.get('s2')!.txHash, h1);
+  assert.deepEqual(b.sales.get('s2')!.txHashes, [h1]);
   const r = await mk(b, fileSaver(path)).pollOnce();
   assert.equal(r.ok && r.newPayments, 0);
   assert.equal(b.payments.size, 1);
@@ -48,6 +48,19 @@ test('la escritura atómica no deja temporales', async () => {
   await saveStore(new Store(), path);
   await saveStore(new Store(), path);
   assert.deepEqual(await readdir(join(path, '..')), ['store.json']);
+});
+
+test('un store v1 con txHash suelto migra a txHashes y se reescribe como v2', async () => {
+  const v1 = JSON.stringify({
+    version: 1, cursor: null, vaultCursor: null, vaults: [[V1, '0x00000000000000000000000000000000000000c1']], events: [],
+    sales: [{ id: 's1', vault: V1, amount: '9', createdBlock: '1', createdAt: 0, status: 'pendiente', txHash: h1 }],
+    payments: [],
+  });
+  const s = deserialize(v1);
+  assert.deepEqual(s.sales.get('s1')!.txHashes, [h1]);
+  const d2 = JSON.parse(serialize(s));
+  assert.equal(d2.version, 2);
+  assert.deepEqual(d2.sales[0].txHashes, [h1]);
 });
 
 test('archivo ausente es primer arranque: store vacío', async () => {

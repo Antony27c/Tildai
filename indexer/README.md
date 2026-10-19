@@ -24,6 +24,8 @@ Variables (si falta o es inválida alguna obligatoria, el proceso falla al inici
 
 El store queda en `TILDAI_STORE_PATH`: se guarda tras cada cambio y al apagar con SIGINT/SIGTERM (apagado prolijo: no acepta más requests, termina el tramo de logs en curso y persiste). Healthcheck sin auth: `GET /health` → `{cursor, vaults}`.
 
+Si se expone fuera de localhost, tiene que ser **detrás de un proxy con https**: el `Bearer` viaja en cada request y por `http://` queda en texto plano (además el server no hace TLS ni rate limit).
+
 ## API
 
 Toda ruta exige `Authorization: Bearer <TILDAI_INDEXER_TOKEN>` salvo `GET /health`. Montos en wei como strings; `timestamp` y `createdAt` en milisegundos; rangos `[since, until)`.
@@ -32,11 +34,11 @@ Toda ruta exige `Authorization: Bearer <TILDAI_INDEXER_TOKEN>` salvo `GET /healt
 |---|---|
 | `POST /sales` `{id, vault, amount}` | Crea la venta (201; 409 duplicada; 400 vault desconocido o monto inválido) |
 | `POST /sales/:id/tx` `{txHash}` | Ata la venta a una tx x402; cobra solo si el `Transfer` confirmado coincide (200; 404; 409) |
-| `GET /sales/:id` | Una venta (200; 404) |
+| `GET /sales/:id` | Una venta: `{id, vault, amount, status, txHashes, txHash? (último, compat)}` (200; 404) |
 | `GET /sales?vault=&since=&until=` | Ventas del vault en el rango de creación |
 | `GET /payments?vault=&since=&until=` | Pagos confirmados al vault; con rango, 503 si falta algún timestamp; sin rango, vienen con `timestamp: null` |
 | `GET /events?since=` | Eventos `{seq, type, paymentId, saleId?, payment}` de a 500; `cursor` es el `seq` del último devuelto |
-| `GET /stats` | Métricas para la entrega: `{vaults, activeVaults7d, payments, salesCobradas, warsReceived, paymentsWithoutTimestamp, byDay[14] en hora AR, generatedAt}` |
+| `GET /stats` | Métricas para la entrega: `{chainId, vaults, activeVaults7d, payments, salesCobradas, warsReceived, paymentsWithoutTimestamp, byDay[14] en hora AR, generatedAt}` |
 | `GET /health` | `{cursor, vaults}`, sin auth |
 
 ## Eventos y deduplicación
