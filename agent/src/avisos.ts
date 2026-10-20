@@ -10,15 +10,15 @@ export const MAX_REINTENTOS_AVISO = 10;
 /**
  * Errors Telegram never heals with a retry: the chat blocked/kicked the bot or no longer exists.
  * Anything else (network, 429, 5xx, an ambiguous 400) is transient. grammy errors carry `error_code`
- * and `description`; plain fetch failures carry neither. The wording stays Telegram-specific on
- * purpose: the send goes through a model session, and a provider error containing "blocked" or
- * "forbidden" must not deactivate a healthy chat.
+ * and `description`; eve's sendTelegramMessage carries neither, only a message with the status embedded
+ * ("Telegram sendMessage failed with HTTP 403: ..."). The wording stays Telegram-specific on purpose:
+ * a library/provider error containing "blocked" or "forbidden" must not deactivate a healthy chat.
  */
 const PERMANENTE = /bot was blocked|chat not found|can't initiate|user is deactivated|kicked from|not a member|chat was (deleted|upgraded)/i;
 function errorPermanente(err: unknown): boolean {
   const e = err as { status?: number; statusCode?: number; error_code?: number; description?: string; message?: string };
   if (PERMANENTE.test(`${e?.message ?? ""} ${e?.description ?? ""}`)) return true;
-  const code = e?.status ?? e?.statusCode ?? e?.error_code;
+  const code = e?.status ?? e?.statusCode ?? e?.error_code ?? Number(/HTTP (\d{3})/.exec(e?.message ?? "")?.[1]);
   return code === 403 || code === 404;
 }
 

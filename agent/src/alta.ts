@@ -260,8 +260,8 @@ export class CreadorVault {
           console.error(`[tildai] ALERTA alta: no se pudo verificar el vault anterior de ${chatId}, no creamos otro por las dudas`, err);
           return duda;
         }
-        // Without txHash: the next /start skips this recovery path and retries for real (the hash stays in the message).
-        await registry.set(chatId, { ...base, estado: "error", nonce: prev.nonce, error: `la tx ${prev.txHash} quedó descartada sin crear el vault` });
+        // Without txHash AND without the pinned nonce (it's proven spent elsewhere): the next /start sends a fresh tx.
+        await registry.set(chatId, { ...base, estado: "error", error: `la tx ${prev.txHash} quedó descartada sin crear el vault` });
         return { estado: "error", mensaje: "La transacción para crear tu caja quedó descartada por la red y el vault no se creó (la verifiqué en la cadena). Probá /start de nuevo." };
       }
       try {
@@ -287,6 +287,39 @@ export class CreadorVault {
       }
     }
 
+    // A nonce pinned by an earlier attempt that never got a hash (broadcast timeout or a crash mid-send):
+    // if the nonce was consumed, only the sweep can say whether it made a vault; if it's still free, the
+    // resend MUST go out on the same nonce, so the two transactions can never both mine (two vaults).
+    let nonceFijado: number | undefined;
+    if (prev && !prev.vault && prev.txHash === undefined && prev.nonce !== undefined) {
+      let consumido: boolean;
+      try {
+        if (!reader.getTransactionCount) throw new Error("el reader no trae getTransactionCount");
+        consumido = BigInt(await reader.getTransactionCount({ address: wallet.account.address, blockTag: "latest" })) > BigInt(prev.nonce);
+      } catch (err) {
+        console.error(`[tildai] ALERTA alta: no se pudo leer el nonce del agente para el chat ${chatId}`, err);
+        return { estado: "error", mensaje: "Tuve un intento anterior creando tu caja y no pude verificar si quedó creada. Probá /start en un rato; no te voy a crear dos." };
+      }
+      if (consumido) {
+        barridoHecho = true;
+        try {
+          const found = await this.findVaultByOwner((prev.owner ?? owner) as Address);
+          if (found) {
+            await registry.set(chatId, { ...base, estado: "creado", vault: found.vault, fromBlock: String(found.block), nonce: prev.nonce });
+            return { estado: "ya_existente", vault: found.vault, resumen: this.resumen(found.vault, capWei) };
+          }
+        } catch (err) {
+          console.error(`[tildai] ALERTA alta: no se pudo verificar el intento anterior de ${chatId}, no creamos otro por las dudas`, err);
+          return { estado: "error", mensaje: "Tuve un intento anterior creando tu caja y no pude verificar si quedó creada. Probá /start en un rato; no te voy a crear dos." };
+        }
+        // The nonce is spent but no VaultCreated exists: that tx can't create the vault anymore. The entry
+        // keeps NO nonce so the next retry pins a fresh one.
+        await registry.set(chatId, { ...base, estado: "error", error: `la tx con el nonce ${prev.nonce} minó sin crear el vault` });
+        return { estado: "error", mensaje: "La transacción para crear tu caja confirmó sin crear el vault (la verifiqué en la cadena). Probá /start de nuevo." };
+      }
+      nonceFijado = prev.nonce;
+    }
+
     // Any earlier attempt (even without a stored hash: a timeout after broadcast or a crash before
     // registry.set) may have landed. Sweep the factory once before sending; a read doubt means no tx.
     if (prev && !prev.vault && !barridoHecho) {
@@ -303,8 +336,10 @@ export class CreadorVault {
     }
 
     // Reserve the daily slot BEFORE the first await: parallel /start from different chats can't all slip under the cap.
+    // A resend on a pinned nonce is the same alta continuing: it doesn't take another slot.
     const now = this.o.now();
-    if (!(await registry.reservarAlta(now, this.o.maxAltasDia))) {
+    const nuevoEnvio = nonceFijado === undefined;
+    if (nuevoEnvio && !(await registry.reservarAlta(now, this.o.maxAltasDia))) {
       console.error(`[tildai] ALERTA alta: tope diario de ${this.o.maxAltasDia} altas alcanzado; el chat ${chatId} quedó afuera`);
       return { estado: "error", mensaje: `Hoy ya di de alta el máximo de comercios que puedo (${this.o.maxAltasDia}). Probá /start mañana.` };
     }
@@ -314,9 +349,16 @@ export class CreadorVault {
     let pudoSalir = false; // once writeContract runs, the tx may already be on the wire: the slot stays spent
     try {
       const { request } = await reader.simulateContract({ account: wallet.account, address: factory, abi: factoryAbi, functionName: "createVault", args: [owner, owner, capWei, maxRate, MAX_SWAP] });
+      // Pin the nonce BEFORE broadcasting and persist it (same pattern as deploy-mainnet): a timeout after
+      // send leaves the entry recoverable, and every resend of this alta goes out on the SAME nonce.
+      nonce = nonceFijado;
+      if (nonce === undefined) {
+        if (!reader.getTransactionCount) throw new Error("el reader no puede fijar el nonce del alta (falta getTransactionCount)");
+        nonce = Number(await reader.getTransactionCount({ address: wallet.account.address, blockTag: "pending" }));
+      }
+      await registry.set(chatId, { ...base, estado: "enviada", nonce });
       pudoSalir = true;
-      sentHash = await wallet.writeContract(feeCurrency ? { ...request, feeCurrency } : request);
-      nonce = (request as { nonce?: number }).nonce ?? (await reader.getTransaction?.({ hash: sentHash }).catch(() => null))?.nonce;
+      sentHash = await wallet.writeContract(feeCurrency ? { ...request, nonce, feeCurrency } : { ...request, nonce });
       await registry.set(chatId, { ...base, estado: "enviada", txHash: sentHash, nonce });
       const receipt = await reader.waitForTransactionReceipt({ hash: sentHash });
       if (receipt.status !== "success") throw new Error(`la tx ${sentHash} se revirtió`);
@@ -324,10 +366,10 @@ export class CreadorVault {
       await registry.set(chatId, { ...base, estado: "creado", vault, fromBlock: String((receipt as any).blockNumber ?? ""), txHash: sentHash, nonce });
       return { estado: "creado", vault, resumen: this.resumen(vault, capWei) };
     } catch (err) {
-      if (!pudoSalir) await registry.devolverAlta(now).catch((e) => console.error("[tildai] no pude devolver el cupo de alta", e));
+      if (!pudoSalir && nuevoEnvio) await registry.devolverAlta(now).catch((e) => console.error("[tildai] no pude devolver el cupo de alta", e));
       const txHash = sentHash;
       const error = (err as { shortMessage?: string }).shortMessage ?? (err as Error).message;
-      await registry.set(chatId, { ...base, estado: "error", error, ...(txHash ? { txHash, nonce } : {}) });
+      await registry.set(chatId, { ...base, estado: "error", error, ...(nonce !== undefined ? { nonce } : {}), ...(txHash ? { txHash } : {}) });
       console.error(`[tildai] ALERTA alta del chat ${chatId}: ${error}`);
       return {
         estado: "error",
