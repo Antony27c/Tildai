@@ -139,12 +139,15 @@ test("fetchPanel: fila malformada → ok:false (nunca totales inventados)", asyn
   assert.equal((await silent(() => fetchPanel(vault, 0, 1, env, rara))).ok, false);
 });
 
-test("readVaultBalance: bigint del contrato wARS; error → null (nunca $0 falso)", async () => {
+test("readVaultBalance: wARS de la cadena del env; error → null (nunca $0 falso)", async () => {
   let seen: any;
   const ok = { readContract: async (a: any) => ((seen = a), 42000000000000000000n) };
-  assert.equal(await readVaultBalance(vault, {}, ok), 42000000000000000000n);
+  assert.equal(await readVaultBalance(vault, { TILDAI_CHAIN_ID: "42220" }, ok), 42000000000000000000n);
   assert.equal(seen.address, WARS);
   assert.deepEqual(seen.args, [vault]);
+  assert.equal(await readVaultBalance(vault, { TILDAI_CHAIN_ID: "11142220" }, ok), 42000000000000000000n);
+  assert.equal(seen.address, "0x7fd80E16929Eac12833c6e214B00eFd43AD20E49"); // wARS Sepolia
   const roto = { readContract: async () => Promise.reject(new Error("rpc")) };
-  assert.equal(await silent(() => readVaultBalance(vault, {}, roto)), null);
+  assert.equal(await silent(() => readVaultBalance(vault, { TILDAI_CHAIN_ID: "42220" }, roto)), null);
+  assert.equal(await silent(() => readVaultBalance(vault, {}, ok)), null); // cadena ausente o inválida
 });

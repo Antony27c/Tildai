@@ -3,6 +3,12 @@ import { getAddress, parseUnits } from "viem";
 export const NETWORK = "eip155:42220";
 export const WARS = getAddress("0x0DC4F92879B7670e5f4e4e6e3c801D229129D90D");
 
+// wARS es otro contrato en cada red (en Sepolia no es la misma dirección que en mainnet).
+export const WARS_BY_CHAIN = {
+  42220: WARS,
+  11142220: getAddress("0x7fd80E16929Eac12833c6e214B00eFd43AD20E49"),
+} as const;
+
 export const REJECTED = "Rechazaste la firma";
 export const NO_BALANCE = "No te alcanza el saldo";
 export const UNCONFIRMED = "No pudimos confirmar el cobro. Si se te descontó plata, avisale al comercio.";
