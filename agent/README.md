@@ -37,7 +37,7 @@ Un schedule por minuto (`avisos_ventas`) pide `GET /events?since=<cursor>` y man
 - Ventas en memoria (se pierden al reiniciar).
 - Una venta es cobrada solo con un `Transfer` confirmado; si el vault falla queda pendiente. El pago se asocia a la venta pendiente más vieja con el mismo monto.
 - El link de pago apunta a `TILDAI_PAY_BASE_URL` (la página de cobro de `web/`).
-- No hay push automático de "pago recibido": el aviso sale al llamar `aviso_pago`. El agente no usa el indexer (lee los logs de la cadena directo).
+- Sin indexer no hay avisos automáticos de "pago recibido": el aviso sale al llamar `aviso_pago`.
 
 ## Vault real (Celo)
 
