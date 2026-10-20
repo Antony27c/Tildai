@@ -6,6 +6,8 @@ test("payStatus: 'Cobrada' solo cuando el indexer confirmó (pollSale)", () => {
   assert.equal(payStatus({ paid: false, pending: false, settled: false, outcome: null }), null);
   const cobrada = payStatus({ paid: true, pending: false, settled: false, outcome: "cobrada" });
   assert.equal(cobrada?.title, "Cobrada");
+  // si la red confirmó (pending) y el indexer ya la anotó, gana "Cobrada"
+  assert.equal(payStatus({ paid: true, pending: true, settled: false, outcome: "cobrada" })?.title, "Cobrada");
   // txHash sin venta: la red confirmó, pero nadie la anotó todavía
   const enviado = payStatus({ paid: true, pending: false, settled: true, outcome: null });
   assert.equal(enviado?.title, "Pago enviado");

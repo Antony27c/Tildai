@@ -19,10 +19,13 @@ export async function GET(request: Request) {
   if (!sale.ok) return json({ error: "Venta inválida" }, 400);
 
   const signature = request.headers.get("PAYMENT-SIGNATURE");
-  // 30 req/min sin firma, 5/min con firma (cada settle nos cobra gas), por IP y por vault
-  const limit = signature ? 5 : 30;
+  // Claves separadas por tipo: el GET sin firma del 402 no consume el cupo del pago firmado.
+  // Sin firma 30/min por IP y vault; firmado 5/min por IP y 20/min por vault (cada settle pasa por verify).
+  const kind = signature ? "s" : "u";
+  // shortcut: x-forwarded-for solo confiable en Vercel; detrás de otro proxy que agregue en vez de pisar, el cliente elige el primer valor
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "desconocida";
-  if (!rateLimit(`ip:${ip}`, limit) || !rateLimit(`vault:${vault?.toLowerCase() ?? "sin-vault"}`, limit)) {
+  const vkey = `${kind}:vault:${vault?.toLowerCase() ?? "sin-vault"}`;
+  if (!rateLimit(`${kind}:ip:${ip}`, signature ? 5 : 30) || !rateLimit(vkey, signature ? 20 : 30)) {
     return json({ error: "Demasiados pedidos, probá en un minuto" }, 429);
   }
 
