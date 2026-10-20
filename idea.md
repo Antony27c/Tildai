@@ -166,38 +166,38 @@ El agente decide y actúa solo, siempre dentro de los límites que fija el contr
 ## 8. Plan de trabajo y tareas
 
 ### Semana 0 - Setup y validación (sáb 17 al dom 19/10)
-- [ ] Inscribirse en Loops House (loops.house/agents-on-open-rails, "Enroll now") y obtener el **attribution tag**
-- [ ] Crear la org/repo público en GitHub (`tildai-app/tildai`) y vincularlo a la entry
+- [x] Inscribirse en Loops House (loops.house/agents-on-open-rails, "Enroll now") y obtener el **attribution tag**. Hecho: cuenta inscripta, tag `celo_c376b2fd04bc`
+- [x] Crear la org/repo público en GitHub (`tildai-app/tildai`) y vincularlo a la entry. Hecho como `Antony27c/Tildai` (público). Falta vincularlo a la entry (`loops project create`)
 - [ ] Instalar skills: `npx loopshouse add agents-on-open-rails` y `npx skills add celo-org/celopedia-skills`
 - [x] Crear la wallet del agente (clave en `.env`, nunca en el repo): `0x2B7c25FedB6d09e149fedc1ffE35529b1cab1f65`. Falta agregarla a la entry
-- [ ] Registrar la identidad **ERC-8004** del agente desde su wallet
+- [ ] Registrar la identidad **ERC-8004** del agente desde su wallet. Hecho en Sepolia (agentId 626); falta mainnet (necesita USD₮ para gas)
 - [ ] Fondear: wARS (Ripio), USD₮ para gas (faucet de Google Cloud Web3 con Self)
 - [ ] Sacar la API key del facilitador en x402.celo.org
-- [ ] Validar la liquidez wARS/USD₮ en Textile FX (decide el track 2A o 2B)
+- [x] Validar la liquidez wARS/USD₮ en Textile FX (decide el track 2A o 2B). Resultado: cotiza, pero el volumen es casi nulo. Falta decidir entre 2A y 2B
 - [ ] Hablar con **3 a 5 comercios** y anotar nombre, rubro y su dolor principal
 - [ ] Registrar el dominio y el handle de Telegram (`@TildaiCajaBot`)
 - [ ] Definir el equipo y los roles
 
 ### Semana 1 - Cobro onchain (lun 20 al dom 26/10)
-- [ ] Scaffold del monorepo: `contracts/`, `agent/` (eve), `web/` (Next.js)
+- [x] Scaffold del monorepo: `contracts/`, `agent/` (eve), `web/` (Next.js) (además `indexer/` y `fx/`)
 - [x] Integrar el SDK de attribution tags en el cliente de wallet (antes de cualquier tx): `agent/src/chain.ts`
 - [x] `TildaiVault` + `TildaiFactory`: depósitos, reglas (% ahorro/impuestos), destinos permitidos, tope diario y retiro del dueño (`contracts/`, `forge test`; con fork de Celo, `FORK=1 forge test --match-contract Fork` en bash)
 - [ ] Tests de contratos y deploy en Sepolia (hecho, `contracts/deployments/celo-sepolia.json`), luego **mainnet + verificación**
-- [ ] Página de cobro con x402 en wARS (Permit2), con monto dinámico y QR fijo
-- [ ] Botón "Pagar con pesos" con on-ramp de Ripio hacia el vault
-- [ ] Indexador de eventos `Transfer` de wARS hacia los vaults
-- [ ] Bot de Telegram básico: /start (crea vault), "cobrame X" (genera link/QR), aviso de pago recibido
+- [x] Página de cobro con x402 en wARS (Permit2), con monto dinámico y QR fijo. Hecho en código (servidor y botón "Pagar con wARS"); sin probar en mainnet
+- [x] Botón "Pagar con pesos" con on-ramp de Ripio hacia el vault
+- [x] Indexador de eventos `Transfer` de wARS hacia los vaults (`indexer/`: concilia ventas, API HTTP, `/events` con cursor)
+- [x] Bot de Telegram básico: /start (crea vault), "cobrame X" (genera link/QR), aviso de pago recibido
 - [ ] **Primer cobro real en mainnet**
 
 ### Semana 2 - Agente autónomo (lun 27/10 al dom 2/11)
-- [ ] Agente en eve con tools: `crear_cobro`, `ventas_hoy`, `cierre_caja`, `apartar`, `retirar`, `dolarizar`
-- [ ] Schedule de **cierre de caja** a las 21 hs con resumen y comparación semanal
-- [ ] Apartado automático de ahorro e impuestos después del cierre
-- [ ] Retiro: mover a la wallet del dueño y generar el link de off-ramp de Ripio
-- [ ] Integración con **Textile FX**: cotizar y ejecutar wARS → USD₮ según el umbral
+- [x] Agente en eve con tools: `crear_cobro`, `ventas_hoy`, `cierre_caja`, `apartar`, `retirar`, `dolarizar` (`cierre_caja` es un schedule, no una tool; se sumó `crear_vault`)
+- [x] Schedule de **cierre de caja** a las 21 hs con resumen y comparación semanal. Compara contra el mismo día de la semana pasada; por ahora solo para el vault del dueño
+- [x] Apartado automático de ahorro e impuestos después del cierre
+- [x] Retiro: mover a la wallet del dueño y generar el link de off-ramp de Ripio
+- [x] Integración con **Textile FX**: cotizar y ejecutar wARS → USD₮ según el umbral. Hecho en código (RFQ real y `vault.swap`); falta el primer swap real
 - [ ] Alertas de anomalías en ventas
 - [ ] Consultas libres en lenguaje natural sobre ventas y saldos
-- [ ] Gas del agente en USD₮ (fee abstraction)
+- [x] Gas del agente en USD₮ (fee abstraction) (`agent/src/chain.ts`, adapter USD₮ en mainnet)
 - [ ] (Opcional) Canal de WhatsApp y aceptar USA₮ en la página de cobro
 - [ ] **Onboarding del primer comercio real**
 
@@ -225,7 +225,7 @@ El agente decide y actúa solo, siempre dentro de los límites que fija el contr
 
 ## 10. Decisiones pendientes
 - [ ] Tamaño del equipo y roles (contratos / agente / frontend / comercios y pitch)
-- [ ] Telegram primero (recomendado) o WhatsApp directo
+- [x] Telegram primero (recomendado) o WhatsApp directo. Decidido: Telegram primero
 - [ ] Comercios concretos (nombre y rubro)
 - [ ] Track secundario: Textile FX (si hay liquidez) o USA₮ con x402
 - [x] Wallet del dueño: passkey (huella o Face ID). Falta confirmar el proveedor (Para u otro)

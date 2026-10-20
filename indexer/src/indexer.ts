@@ -1,3 +1,4 @@
+import { setTimeout as sleep } from 'node:timers/promises';
 import { parseAbi } from 'viem';
 import { eachChunk, withRetry, type RetryOpts } from './rpc.ts';
 
@@ -10,6 +11,8 @@ export const [vaultCreatedEvent] = parseAbi(['event VaultCreated(address indexed
 export type Log = {
   address: string;
   blockNumber: bigint | null;
+  // Timestamp del bloque en segundos: lo incluyen op-geth/Forno en eth_getLogs (viem lo parsea a bigint).
+  blockTimestamp?: bigint | null;
   transactionHash: string | null;
   logIndex: number | null;
   args: { from?: string; to?: string; value?: bigint; vault?: string; owner?: string };
@@ -28,12 +31,12 @@ export interface ChainReader {
   }): Promise<Log[]>;
 }
 
-export type Sale = { id: string; vault: string; amount: bigint; createdBlock: bigint; createdAt: number; status: 'pendiente' | 'cobrada'; paymentId?: string; txHash?: string };
-export type Payment = { id: string; vault: string; from: string; amount: bigint; block: bigint; txHash: string; timestamp?: number; saleId?: string };
+export type Sale = { id: string; vault: string; amount: bigint; createdBlock: bigint; createdAt: number; status: 'pendiente' | 'cobrada'; paymentId?: string; txHashes: string[] };
+export type Payment = { id: string; vault: string; from: string; amount: bigint; block: bigint; txHash: string; timestamp?: number; timestampUnavailable?: boolean; saleId?: string };
 // Eventos para el agente: seq crece de a 1 y es el cursor de GET /events.
 export type StoreEvent = { seq: number; type: 'venta_cobrada' | 'pago_sin_venta'; paymentId: string; saleId?: string };
 
-// shortcut: store en memoria, se pierde al reiniciar; cambiar por DB antes de usarlo con plata real.
+// shortcut: store en memoria volcado a JSON por save() tras cada cambio; cambiar por DB antes de usarlo con plata real.
 export class Store {
   sales = new Map<string, Sale>();
   payments = new Map<string, Payment>();
@@ -49,7 +52,7 @@ export class Store {
   addSale(s: { id: string; vault: string; amount: bigint; createdBlock: bigint; createdAt: number }): Sale {
     if (this.sales.has(s.id)) throw new IndexerError('conflict', `venta duplicada: ${s.id}`);
     if (s.amount <= 0n) throw new IndexerError('invalid', 'el monto debe ser positivo');
-    const sale: Sale = { ...s, vault: s.vault.toLowerCase(), status: 'pendiente' };
+    const sale: Sale = { ...s, vault: s.vault.toLowerCase(), status: 'pendiente', txHashes: [] };
     this.sales.set(s.id, sale);
     return sale;
   }
@@ -75,6 +78,8 @@ export type PollResult =
 
 export type IndexerOpts = {
   client: ChainReader;
+  // Nodo de archivo opcional: solo se usa para la fecha de bloques que el RPC principal ya podó.
+  archiveClient?: ChainReader;
   store: Store;
   factory: string;
   token?: string;
@@ -93,11 +98,19 @@ export type IndexerOpts = {
 };
 
 // Cruza un pago con la venta pendiente más vieja del mismo vault y monto exacto, creada en o antes del bloque del pago.
-// Las ventas atadas a una tx (x402) solo las cobra esa tx, ver settleByTx.
+// Una venta con hashes x402 informados también la cobra un pago real que coincide: un hash ajeno no la puede trabar.
+// Pero si el txHash del pago fue informado para una venta, esa es la suya aunque haya otra más vieja del mismo monto.
 function reconcile(store: Store, p: Payment): boolean {
   if (p.saleId) return false;
+  const fits = (s: Sale) => s.status === 'pendiente' && s.vault === p.vault && s.amount === p.amount && p.block >= s.createdBlock;
   for (const s of store.sales.values()) {
-    if (s.status === 'pendiente' && !s.txHash && s.vault === p.vault && s.amount === p.amount && p.block >= s.createdBlock) {
+    if (fits(s) && s.txHashes.includes(p.txHash)) {
+      claim(store, s, p);
+      return true;
+    }
+  }
+  for (const s of store.sales.values()) {
+    if (fits(s)) {
       claim(store, s, p);
       return true;
     }
@@ -112,11 +125,11 @@ function claim(store: Store, s: Sale, p: Payment) {
   p.saleId = s.id;
 }
 
-// Cobra la venta solo si el indexador ya vio, confirmado, un Transfer de esa tx al vault de la venta por el monto exacto y sin dueño.
+// Cobra la venta solo si el indexador ya vio, confirmado, un Transfer de alguna de las tx informadas al vault de la venta por el monto exacto y sin dueño.
 function settleByTx(store: Store, s: Sale): boolean {
-  if (s.status !== 'pendiente' || !s.txHash) return false;
+  if (s.status !== 'pendiente' || !s.txHashes.length) return false;
   for (const p of store.payments.values()) {
-    if (p.txHash === s.txHash && !p.saleId && p.vault === s.vault && p.amount === s.amount && p.block >= s.createdBlock) {
+    if (s.txHashes.includes(p.txHash) && !p.saleId && p.vault === s.vault && p.amount === s.amount && p.block >= s.createdBlock) {
       claim(store, s, p);
       return true;
     }
@@ -125,6 +138,15 @@ function settleByTx(store: Store, s: Sale): boolean {
 }
 
 const max = (a: bigint, b: bigint) => (a > b ? a : b);
+
+// Texto del error de RPC junto, para buscar patrones; viem pone el detalle útil en .details.
+const errText = (e: unknown) =>
+  e && typeof e === 'object'
+    ? [(e as { details?: string }).details, (e as { message?: string }).message, (e as { shortMessage?: string }).shortMessage].filter(Boolean).join(' ')
+    : String(e);
+const brief = (e: unknown) => errText(e).split('\n')[0];
+// 'behind head'/'missing trie node'/'header not found': el nodo podó el bloque; es permanente, no transitorio.
+const isPruned = (e: unknown) => /behind head|missing trie node|header not found|pruned/i.test(errText(e));
 
 export function createIndexer(o: IndexerOpts) {
   const { store, client } = o;
@@ -161,24 +183,45 @@ export function createIndexer(o: IndexerOpts) {
       const from = max(o.startBlock, (store.cursor ?? o.startBlock) - rescan);
       let newPayments = 0;
       let matched = 0;
+      // Fecha del bloque en ms: RPC normal; si el nodo ya podó el bloque, el RPC de archivo (si hay).
+      // null = podado de los dos lados: el pago se marca sin fecha, jamás se estima por número de bloque.
+      async function blockTs(b: bigint): Promise<number | null> {
+        try {
+          return Number((await rpc(() => client.getBlock({ blockNumber: b }))).timestamp) * 1000;
+        } catch (e) {
+          if (!isPruned(e)) throw e;
+          if (!o.archiveClient) {
+            log(`indexer: bloque ${b} podado en el RPC (${brief(e)})`);
+            return null;
+          }
+          try {
+            return Number((await rpc(() => o.archiveClient!.getBlock({ blockNumber: b }))).timestamp) * 1000;
+          } catch (e2) {
+            if (!isPruned(e2)) throw e2;
+            log(`indexer: bloque ${b} podado también en el RPC de archivo (${brief(e2)})`);
+            return null;
+          }
+        }
+      }
+
       // Pone fecha a los pagos que aún no la tienen: una lectura por bloque, se guarda en memoria y luego en disco.
-      // Si falla el RPC se corta la tanda: el pago queda sin timestamp, no se pierde, y se reintenta en el próximo poll.
+      // Un error transitorio corta la tanda y reintenta en el próximo poll; un bloque podado marca al pago
+      // como sin fecha (permanente) para que GET /payments lo informe aparte en vez de fallar siempre.
       async function fillTimestamps() {
         const blocks = new Map<bigint, number | null>();
         for (const p of store.payments.values()) {
-          if (p.timestamp != null) continue;
+          if (p.timestamp != null || p.timestampUnavailable) continue;
           if (!blocks.has(p.block)) {
             try {
-              const { timestamp } = await rpc(() => client.getBlock({ blockNumber: p.block }));
-              blocks.set(p.block, Number(timestamp) * 1000);
+              blocks.set(p.block, await blockTs(p.block));
             } catch (e) {
-              log(e);
-              blocks.set(p.block, null);
+              log(`indexer: getBlock ${p.block} falló, reintenta en el próximo poll: ${brief(e)}`);
               break;
             }
           }
           const ts = blocks.get(p.block);
           if (ts != null) p.timestamp = ts;
+          else p.timestampUnavailable = true;
         }
       }
 
@@ -199,6 +242,12 @@ export function createIndexer(o: IndexerOpts) {
               store.payments.set(id, p);
               newPayments++;
             }
+            // op-geth/Forno incluye blockTimestamp en el log: fecha gratis, sin getBlock.
+            // Si el pago estaba marcado sin fecha (bloque podado), la fecha que llega borra la marca.
+            if (p.timestamp == null && l.blockTimestamp != null) {
+              p.timestamp = Number(l.blockTimestamp) * 1000;
+              delete p.timestampUnavailable;
+            }
             if (reconcile(store, p)) matched++;
             else if (isNew) store.addEvent('pago_sin_venta', p.id);
           }
@@ -215,11 +264,11 @@ export function createIndexer(o: IndexerOpts) {
     }
   }
 
-  // Reintenta en el próximo tick; para con la señal.
+  // Reintenta en el próximo tick; para con la señal, también a mitad del sleep.
   async function watch(ms: number, signal: AbortSignal) {
     while (!signal.aborted) {
       await pollOnce();
-      await new Promise((r) => setTimeout(r, ms));
+      await sleep(ms, undefined, { signal }).catch(() => {}); // AbortError al abortar: el while sale
     }
   }
 
@@ -231,7 +280,8 @@ export function createIndexer(o: IndexerOpts) {
   }
 
   // Pago x402: el hash lo informa el facilitador pero no se le cree. Queda pendiente hasta que un poll vea el Transfer confirmado.
-  // shortcut: una tx equivocada deja la venta pendiente para siempre sin aviso; agregar vencimiento y alerta al dueño.
+  // Se guardan hasta 5 hashes sin repetir: un hash erróneo o ajeno no tapa al pago bueno.
+  // shortcut: una venta cuyo pago nunca llega queda pendiente para siempre sin aviso; agregar vencimiento y alerta al dueño.
   async function markPaidByTx(saleId: string, txHash: string): Promise<Sale['status']> {
     const s = store.sales.get(saleId);
     if (!s) throw new IndexerError('not_found', `venta inexistente: ${saleId}`);
@@ -241,7 +291,9 @@ export function createIndexer(o: IndexerOpts) {
       if (store.payments.get(s.paymentId!)?.txHash === tx) return 'cobrada';
       throw new IndexerError('conflict', `la venta ${saleId} ya está cobrada con otro pago`);
     }
-    s.txHash = tx;
+    if (s.txHashes.includes(tx)) return s.status;
+    if (s.txHashes.length >= 5) throw new IndexerError('conflict', `la venta ${saleId} ya tiene 5 tx informadas`);
+    s.txHashes.push(tx);
     settleByTx(store, s);
     await o.save?.(store);
     return s.status;

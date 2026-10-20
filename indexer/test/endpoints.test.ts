@@ -36,7 +36,7 @@ const indexer = createIndexer({ client, store, factory: F, startBlock: 1n, confi
 let server: Server;
 let base: string;
 before(async () => {
-  server = createApp({ indexer, store, token: TOKEN, onError: () => {} });
+  server = createApp({ indexer, store, token: TOKEN, chainId: 11142220, onError: () => {} });
   await new Promise<void>((ok) => server.listen(0, '127.0.0.1', ok));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
@@ -63,7 +63,7 @@ test('base: ventas y pagos indexados', async () => {
 
 test('GET /sales: filtra por vault y por rango [since, until)', async () => {
   const all = await get(`/sales?vault=${V1}`);
-  assert.deepEqual(all.body, [{ id: 's1', vault: V1, amount: '100', status: 'cobrada', createdAt: nowMs }]);
+  assert.deepEqual(all.body, [{ id: 's1', vault: V1, amount: '100', status: 'cobrada', txHashes: [], createdAt: nowMs }]);
   assert.deepEqual((await get(`/sales?vault=${V1}&since=${nowMs + 1}`)).body, []);
   assert.deepEqual((await get(`/sales?vault=${V1}&since=0&until=${nowMs}`)).body, []);
   assert.equal((await get(`/sales?vault=${V1}&until=${nowMs + 1}`)).status, 200);
@@ -167,4 +167,18 @@ test('GET /payments: sin rango incluye pagos sin timestamp con timestamp null, c
   assert.equal(sinTs!.timestamp, null);
   assert.equal((await get(`/payments?vault=${V1}&since=0`)).status, 503);
   store.payments.delete('sints:0');
+});
+
+test('GET /payments: un pago marcado timestampUnavailable se excluye del rango con 200, no 503', async () => {
+  // Vault aislado: el store compartido tiene pagos x:i sin timestamp (transitorios) que sí darían 503.
+  const VP = '0x00000000000000000000000000000000000000aa';
+  store.payments.set('podado:0', { id: 'podado:0', vault: VP, from: '0x00000000000000000000000000000000000000b1', amount: 7n, block: 2n, txHash: h(51), timestampUnavailable: true });
+  const all = await get(`/payments?vault=${VP}`);
+  const sinFecha = (all.body as { id: string; timestamp: number | null; timestampUnavailable?: boolean }[]).find((p) => p.id === 'podado:0');
+  assert.equal(sinFecha!.timestamp, null);
+  assert.equal(sinFecha!.timestampUnavailable, true);
+  const rango = await get(`/payments?vault=${VP}&since=0`);
+  assert.equal(rango.status, 200);
+  assert.deepEqual(rango.body, []);
+  store.payments.delete('podado:0');
 });

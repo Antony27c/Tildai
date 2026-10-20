@@ -280,13 +280,153 @@ test('x402: el mismo pago no cobra dos ventas', async () => {
   assert.deepEqual([store.sales.get('s1')!.status, store.sales.get('s2')!.status], ['cobrada', 'pendiente']);
 });
 
-test('x402: una venta atada a una tx no la cobra otro pago de igual monto', async () => {
+test('x402: una venta con hash informado la cobra igual un pago real de igual monto', async () => {
   const { client, store, idx } = setup();
   await sell(client, idx, { id: 's1', vault: V1, amount: 9n });
   await idx.markPaidByTx('s1', h(1));
   client.logs.push(tr(V1, 9n, 50n, h(2)));
   await idx.pollOnce();
-  assert.equal(store.sales.get('s1')!.status, 'pendiente');
+  assert.equal(store.sales.get('s1')!.status, 'cobrada');
+});
+
+test('x402: un pago chico con tx ajena no traba la venta (hallazgo 1 de la auditoría)', async () => {
+  // Camino x402: el atacante informa su tx de 0,01; el cliente paga bien por x402 y la venta cobra con la tx buena.
+  {
+    const { client, store, idx } = setup();
+    await sell(client, idx, { id: 's1', vault: V1, amount: 9n });
+    client.logs.push(tr(V1, 1n, 50n, h(9)));
+    await idx.pollOnce();
+    assert.equal(await idx.markPaidByTx('s1', h(9)), 'pendiente');
+    assert.equal(await idx.markPaidByTx('s1', h(2)), 'pendiente');
+    client.logs.push(tr(V1, 9n, 101n, h(2))); // adelante del cursor; el head sube para que confirme
+    client.head = 104n;
+    await idx.pollOnce();
+    assert.equal(store.sales.get('s1')!.status, 'cobrada');
+    assert.equal(store.sales.get('s1')!.paymentId, `${h(2)}:0`);
+  }
+  // Camino Ripio: el cliente paga directo y un Transfer que coincide cobra aunque haya hashes informados.
+  {
+    const { client, store, idx } = setup();
+    await sell(client, idx, { id: 's1', vault: V1, amount: 9n });
+    client.logs.push(tr(V1, 1n, 50n, h(9)));
+    await idx.pollOnce();
+    assert.equal(await idx.markPaidByTx('s1', h(9)), 'pendiente');
+    client.logs.push(tr(V1, 9n, 101n, h(7)));
+    client.head = 104n;
+    await idx.pollOnce();
+    assert.equal(store.sales.get('s1')!.status, 'cobrada');
+    assert.equal(store.sales.get('s1')!.paymentId, `${h(7)}:0`);
+  }
+});
+
+test('x402: el pago de una venta con hash informado no cobra otra más vieja del mismo monto', async () => {
+  const { client, store, idx } = setup();
+  await sell(client, idx, { id: 'A', vault: V1, amount: 9n }, 1n);
+  await sell(client, idx, { id: 'B', vault: V1, amount: 9n }, 2n);
+  assert.equal(await idx.markPaidByTx('B', h(7)), 'pendiente');
+  client.logs.push(tr(V1, 9n, 50n, h(7)));
+  await idx.pollOnce();
+  assert.equal(store.sales.get('B')!.status, 'cobrada');
+  assert.equal(store.sales.get('A')!.status, 'pendiente');
+});
+
+test('x402: una venta guarda hasta 5 hashes sin repetir; el sexto da conflicto', async () => {
+  const { client, store, idx } = setup();
+  await sell(client, idx, { id: 's1', vault: V1, amount: 9n });
+  for (const i of [1, 2, 3, 4, 5]) assert.equal(await idx.markPaidByTx('s1', h(i)), 'pendiente');
+  assert.equal(await idx.markPaidByTx('s1', h(1)), 'pendiente'); // repetido: idempotente, no suma
+  assert.deepEqual(store.sales.get('s1')!.txHashes, [h(1), h(2), h(3), h(4), h(5)]);
+  await assert.rejects(idx.markPaidByTx('s1', h(6)), /5 tx informadas/);
+  // Cualquiera de los 5 cobra, no solo el último.
+  client.logs.push(tr(V1, 9n, 50n, h(2)));
+  await idx.pollOnce();
+  assert.equal(store.sales.get('s1')!.status, 'cobrada');
+});
+
+const PRUNED = () => Object.assign(new Error('Invalid parameters were provided to the RPC method.'), { details: 'block is more than 10064 blocks behind head' });
+
+test('el blockTimestamp del log da fecha al pago sin llamar a getBlock', async () => {
+  const { client, store, idx } = setup();
+  await sell(client, idx, { id: 's1', vault: V1, amount: 9n });
+  const l = tr(V1, 9n, 50n, h(1));
+  l.blockTimestamp = 1700000250n; // op-geth/Forno lo incluye en eth_getLogs
+  client.logs.push(l);
+  client.getBlock = async () => { throw new Error('getBlock no debe llamarse'); };
+  await idx.pollOnce();
+  assert.equal(store.payments.get(`${h(1)}:0`)!.timestamp, 1700000250000);
+});
+
+test('bloque podado por el RPC: el pago queda marcado sin fecha (no reintenta para siempre)', async () => {
+  const logged: unknown[] = [];
+  const { client, store, idx } = setup({ onError: (e: unknown) => logged.push(e) });
+  await sell(client, idx, { id: 's1', vault: V1, amount: 9n });
+  client.logs.push(tr(V1, 9n, 50n, h(1)));
+  client.getBlock = async () => { throw PRUNED(); };
+  await idx.pollOnce();
+  await idx.pollOnce(); // dos polls: la marca tiene que persistir y no volver a intentar
+  const p = store.payments.get(`${h(1)}:0`)!;
+  assert.equal(p.timestamp, undefined);
+  assert.equal(p.timestampUnavailable, true);
+  const msgs = logged.map(String);
+  assert.ok(msgs.length > 0 && msgs.every((m) => !m.includes('\n') && m.includes('10064')), 'una línea por error, sin stack');
+});
+
+test('bloque podado: con RPC de archivo el pago obtiene fecha igual', async () => {
+  const archive: ChainReader = {
+    getBlockNumber: async () => 100n,
+    getBlock: async () => ({ timestamp: 1700000250n }),
+    getLogs: async () => [],
+  };
+  const { client, store, idx } = setup({ archiveClient: archive });
+  await sell(client, idx, { id: 's1', vault: V1, amount: 9n });
+  client.logs.push(tr(V1, 9n, 50n, h(1)));
+  client.getBlock = async () => { throw PRUNED(); };
+  await idx.pollOnce();
+  assert.equal(store.payments.get(`${h(1)}:0`)!.timestamp, 1700000250000);
+  assert.equal(store.payments.get(`${h(1)}:0`)!.timestampUnavailable, undefined);
+});
+
+test('bloque podado: si el archivo tampoco lo sirve, queda sin fecha', async () => {
+  const archive: ChainReader = {
+    getBlockNumber: async () => 100n,
+    getBlock: async () => { throw PRUNED(); },
+    getLogs: async () => [],
+  };
+  const { client, store, idx } = setup({ archiveClient: archive });
+  await sell(client, idx, { id: 's1', vault: V1, amount: 9n });
+  client.logs.push(tr(V1, 9n, 50n, h(1)));
+  client.getBlock = async () => { throw PRUNED(); };
+  await idx.pollOnce();
+  assert.equal(store.payments.get(`${h(1)}:0`)!.timestampUnavailable, true);
+});
+
+test('un pago marcado sin fecha pierde la marca cuando llega el timestamp', async () => {
+  const { client, store, idx } = setup({ rescan: 200n });
+  await sell(client, idx, { id: 's1', vault: V1, amount: 9n });
+  const l = tr(V1, 9n, 50n, h(1)); // sin blockTimestamp: el primer poll marca el pago
+  client.logs.push(l);
+  client.getBlock = async () => { throw PRUNED(); };
+  await idx.pollOnce();
+  const p = store.payments.get(`${h(1)}:0`)!;
+  assert.equal(p.timestampUnavailable, true);
+  l.blockTimestamp = 1700000250n; // el rescan lo vuelve a leer, ahora con fecha en el log
+  await idx.pollOnce();
+  assert.equal(p.timestamp, 1700000250000);
+  assert.equal(p.timestampUnavailable, undefined);
+});
+
+test('un error transitorio de getBlock no marca ni corta: reintenta el próximo poll', async () => {
+  const { client, store, idx } = setup();
+  await sell(client, idx, { id: 's1', vault: V1, amount: 9n });
+  client.logs.push(tr(V1, 9n, 50n, h(1)));
+  client.getBlock = async () => { throw new Error('timeout de red'); };
+  await idx.pollOnce();
+  const p = store.payments.get(`${h(1)}:0`)!;
+  assert.equal(p.timestamp, undefined);
+  assert.equal(p.timestampUnavailable, undefined); // transitorio no marca
+  client.getBlock = async (b) => ({ timestamp: b.blockNumber });
+  await idx.pollOnce();
+  assert.equal(p.timestamp, 50_000);
 });
 
 test('x402: entradas inválidas y venta ya cobrada con otro pago', async () => {

@@ -25,7 +25,7 @@ const client: ChainReader = {
 
 const store = new Store();
 const indexer = createIndexer({ client, store, factory: F, startBlock: 1n, confirmations: 2n, rescan: 0n, retries: 0, onError: () => {} });
-const server = createApp({ indexer, store, token: TOKEN, onError: () => {} });
+const server = createApp({ indexer, store, token: TOKEN, chainId: 11142220, onError: () => {} });
 await new Promise<void>((ok) => server.listen(0, '127.0.0.1', ok));
 after(() => server.close());
 const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -97,7 +97,7 @@ test('punta a punta: crear venta, informar tx, poll y status cobrada', async () 
   assert.equal((await call('POST', '/sales', { id: 'e2e', vault: V1, amount })).status, 201);
   const tx = await call('POST', '/sales/e2e/tx', { txHash: h(7) });
   assert.deepEqual([tx.status, tx.body], [200, { id: 'e2e', status: 'pendiente' }]);
-  assert.deepEqual((await call('GET', '/sales/e2e')).body, { id: 'e2e', vault: V1, amount, status: 'pendiente', txHash: h(7) });
+  assert.deepEqual((await call('GET', '/sales/e2e')).body, { id: 'e2e', vault: V1, amount, status: 'pendiente', txHashes: [h(7)], txHash: h(7) });
 
   chain.logs.push({ address: WARS, blockNumber: 101n, transactionHash: h(7), logIndex: 0, args: { from: '0x00000000000000000000000000000000000000b1', to: V1, value: BigInt(amount) } });
   chain.head = 102n;
@@ -105,7 +105,7 @@ test('punta a punta: crear venta, informar tx, poll y status cobrada', async () 
   assert.equal((await call('GET', '/sales/e2e')).body.status, 'pendiente');
   chain.head = 103n;
   await indexer.pollOnce();
-  assert.deepEqual((await call('GET', '/sales/e2e')).body, { id: 'e2e', vault: V1, amount, status: 'cobrada', txHash: h(7) });
+  assert.deepEqual((await call('GET', '/sales/e2e')).body, { id: 'e2e', vault: V1, amount, status: 'cobrada', txHashes: [h(7)], txHash: h(7) });
 
   assert.equal((await call('POST', '/sales/e2e/tx', { txHash: h(7) })).status, 200);
   assert.equal((await call('POST', '/sales/e2e/tx', { txHash: h(8) })).status, 409);

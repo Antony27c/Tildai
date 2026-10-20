@@ -12,7 +12,7 @@ Agente de caja con tools `crear_cobro`, `ventas_hoy`, `aviso_pago` y un schedule
    TELEGRAM_BOT_USERNAME=tu_bot
    TILDAI_OWNER_CHAT_ID=<tu chat id>
    ```
-   Si todavía no sabés tu chat id, dejá `TILDAI_OWNER_CHAT_ID` vacío: el bot ignora todo y loguea el id del chat que le escribió.
+   Si todavía no sabés tu chat id, dejá `TILDAI_ALLOWED_CHATS` vacío: el bot contesta que el alta es por invitación y loguea el id del chat que le escribió.
 3. Credenciales del modelo (AI Gateway o `ANTHROPIC_API_KEY`) con `/login` en la TUI de eve.
 4. `npm run dev` abre la TUI. Para Telegram exponé el puerto (ej. con un túnel) y registrá el webhook:
    ```
@@ -22,16 +22,22 @@ Agente de caja con tools `crear_cobro`, `ventas_hoy`, `aviso_pago` y un schedule
 5. Probá: "cobrame 8500", "¿me pagaron?", "¿cuánto vendí hoy?". (con el vault falso no entran pagos; eso se cubre en los tests).
 6. Cierre de caja: con `npm run dev` corriendo, `curl -X POST http://localhost:2000/eve/v1/dev/schedules/cierre_caja`.
 
+## Indexer y avisos de venta
+
+Con `TILDAI_INDEXER_URL` + `TILDAI_INDEXER_TOKEN` el indexer es la fuente de verdad de las ventas: `ventas_hoy` y el cierre leen `GET /payments` (sin rango para reconciliar pendientes; con rango por día argentino para los totales que mueven plata). Si el indexer está caído o responde 503 (pagos esperando timestamp por un error transitorio), el cierre avisa "pendiente" y **no aparta nada**. Los pagos de bloques que el RPC ya podó vienen con `timestamp: null` y `timestampUnavailable: true` en la lectura sin rango: nunca entran en un total por día (a nadie se les inventa la fecha) y el cierre avisa cuántos quedaron afuera. Sin indexer, la lectura onchain queda como verificación.
+
+Un schedule por minuto (`avisos_ventas`) pide `GET /events?since=<cursor>` y manda a cada chat `Entró una venta: $X ✓` o `Te llegó un pago de $X sin venta asociada`. El evento no trae el vault: se resuelve cruzando `paymentId` con `/payments` de cada vault registrado. El cursor, los `tipo:paymentId` ya avisados y los reintentos de un envío fallido viven en `TILDAI_EVENTS_FILE` (JSON atómico, default `data/eventos.json`) y solo avanzan después de un envío exitoso, así un reinicio o un fallo de Telegram no duplica ni saltea; un `pago_sin_venta` que después cobra una venta (`venta_cobrada` con el mismo `paymentId`) avisa los dos, porque son cosas distintas para el dueño. Si un chat rechaza al bot para siempre (bloqueado/borrado) queda inactivo con una ALERTA y los demás siguen; un error transitorio reintenta con backoff hasta 10 veces por evento antes de saltarlo con ALERTA.
+
 ## Tests
 
 `npm test` (`node --test`, datos falsos).
 
 ## Límites actuales
 
-- Ventas en memoria (se pierden al reiniciar) y un solo comercio.
+- Ventas en memoria (se pierden al reiniciar).
 - Una venta es cobrada solo con un `Transfer` confirmado; si el vault falla queda pendiente. El pago se asocia a la venta pendiente más vieja con el mismo monto.
-- El link de pago apunta a `TILDAI_PAY_BASE_URL` (la página de cobro todavía no existe).
-- No hay push automático de "pago recibido": el aviso sale al llamar `aviso_pago`.
+- El link de pago apunta a `TILDAI_PAY_BASE_URL` (la página de cobro de `web/`).
+- Sin indexer no hay avisos automáticos de "pago recibido": el aviso sale al llamar `aviso_pago`.
 
 ## Vault real (Celo)
 
@@ -39,7 +45,7 @@ Variables en `.env`: `TILDAI_VAULT`, `TILDAI_FROM_BLOCK` (bloque de creación de
 
 ## Apartado en el cierre de caja
 
-Después del resumen de las 21 hs el agente aparta ahorro e impuestos sobre lo vendido y confirmado ese día argentino (nunca más que el operativo del vault). Porcentajes por `.env`: `TILDAI_SAVINGS_PCT` y `TILDAI_TAXES_PCT` (0 a 100, suma <= 100); si faltan o son inválidos no aparta y lo dice en el mensaje. Los ids `cierre:<fecha AR>:ahorro|impuestos` evitan apartar dos veces si el cierre se repite. En mainnet el gas se paga en USD₮ (`feeCurrency` con el adapter oficial).
+El cierre corre una vez por cada vault del registro chat→vault (más el `TILDAI_VAULT` del dueño si está configurado) y manda el resumen a cada chat; si el cierre de un comercio falla se loguea, se avisa a ese chat y los demás siguen. Después del resumen de las 21 hs el agente aparta ahorro e impuestos sobre lo vendido y confirmado ese día argentino (nunca más que el operativo del vault). Porcentajes por `.env`: `TILDAI_SAVINGS_PCT` y `TILDAI_TAXES_PCT` (0 a 100, suma <= 100); si faltan o son inválidos no aparta y lo dice en el mensaje. Los ids `cierre:<fecha AR>:ahorro|impuestos` evitan apartar dos veces si el cierre se repite. En mainnet el gas se paga en USD₮ (`feeCurrency` con el adapter oficial).
 
 ## Dolarizar
 
@@ -48,3 +54,5 @@ La tool `dolarizar` (operativo, ahorro o impuestos) pide un preview a Textile, d
 ## Alta del comercio (/start)
 
 Las tools resuelven el vault del CHAT REAL de la sesión (el chat_id que pone el auth de Telegram, no un parámetro del modelo): un chat sin vault propio solo puede hacer el alta y nunca cae al vault de env, que es solo del chat de TILDAI_OWNER_CHAT_ID. Si un mensaje parece una clave privada o frase semilla no llega al modelo: el canal contesta que la borre. El agente pide la wallet del dueño (0x) y el tope diario en texto ("100.000" = cien mil), y crear_vault llama a TildaiFactory.createVault (attribution tag, feeCurrency USD₮ en mainnet). Un chat = un vault (registro JSON atómico en TILDAI_REGISTRY, default data/chats.json), con lock por chat contra /start simultáneos; la dirección sale del evento VaultCreated del recibo y, si una tx anterior quedó sin confirmar, antes de reintentar espera su recibo (pendiente = no manda otra) o barre los logs de la factory por el owner guardado. Variables: TILDAI_FACTORY y TILDAI_FROM_BLOCK (en Sepolia, la factory de contracts/deployments/celo-sepolia.json).
+
+El canal está cerrado por defecto: solo hablan con el agente los chats de `TILDAI_ALLOWED_CHATS` (ids por coma), el chat `TILDAI_OWNER_CHAT_ID` y los que ya tienen vault o un alta en curso; `TILDAI_OPEN_SIGNUP=1` abre el alta a cualquiera. Al resto se le contesta que el alta es por invitación, sin crear nada ni llegar al modelo. Además hay un tope de altas por día argentino (`TILDAI_MAX_ALTAS_DIA`, default 5) que cuenta las tx `createVault` enviadas y queda persistido en el registro, así que un reinicio no lo resetea; un valor inválido lo cierra (0). Si una tx de alta pasó más de `TILDAI_ALTA_PENDIENTE_MIN` minutos (default 30) sin recibo, antes de marcarla se verifica si sigue viva (el nodo la conoce y su nonce no lo usó otra tx): si quedó descartada se barre `VaultCreated` por las dudas y, si no hay vault, el alta queda fallida y el chat puede reintentar. Ante cualquier duda de lectura se devuelve error y nunca se manda una segunda createVault.
