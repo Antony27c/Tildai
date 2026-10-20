@@ -243,7 +243,11 @@ export function createIndexer(o: IndexerOpts) {
               newPayments++;
             }
             // op-geth/Forno incluye blockTimestamp en el log: fecha gratis, sin getBlock.
-            if (p.timestamp == null && l.blockTimestamp != null) p.timestamp = Number(l.blockTimestamp) * 1000;
+            // Si el pago estaba marcado sin fecha (bloque podado), la fecha que llega borra la marca.
+            if (p.timestamp == null && l.blockTimestamp != null) {
+              p.timestamp = Number(l.blockTimestamp) * 1000;
+              delete p.timestampUnavailable;
+            }
             if (reconcile(store, p)) matched++;
             else if (isNew) store.addEvent('pago_sin_venta', p.id);
           }

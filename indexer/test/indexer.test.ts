@@ -400,6 +400,21 @@ test('bloque podado: si el archivo tampoco lo sirve, queda sin fecha', async () 
   assert.equal(store.payments.get(`${h(1)}:0`)!.timestampUnavailable, true);
 });
 
+test('un pago marcado sin fecha pierde la marca cuando llega el timestamp', async () => {
+  const { client, store, idx } = setup({ rescan: 200n });
+  await sell(client, idx, { id: 's1', vault: V1, amount: 9n });
+  const l = tr(V1, 9n, 50n, h(1)); // sin blockTimestamp: el primer poll marca el pago
+  client.logs.push(l);
+  client.getBlock = async () => { throw PRUNED(); };
+  await idx.pollOnce();
+  const p = store.payments.get(`${h(1)}:0`)!;
+  assert.equal(p.timestampUnavailable, true);
+  l.blockTimestamp = 1700000250n; // el rescan lo vuelve a leer, ahora con fecha en el log
+  await idx.pollOnce();
+  assert.equal(p.timestamp, 1700000250000);
+  assert.equal(p.timestampUnavailable, undefined);
+});
+
 test('un error transitorio de getBlock no marca ni corta: reintenta el próximo poll', async () => {
   const { client, store, idx } = setup();
   await sell(client, idx, { id: 's1', vault: V1, amount: 9n });

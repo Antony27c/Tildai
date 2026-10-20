@@ -66,8 +66,11 @@ test('un store v1 con txHash suelto migra a txHashes y se reescribe como v3', as
 test('timestampUnavailable hace ida y vuelta (v3); un store v2 lo lee sin el campo', async () => {
   const s = new Store();
   s.payments.set('p:0', { id: 'p:0', vault: V1, from: '0x00000000000000000000000000000000000000b1', amount: 9n, block: 1n, txHash: h1, timestampUnavailable: true });
+  // La marca no convive con la fecha: un archivo viejo con ambos se normaliza al leer.
+  s.payments.set('p:1', { id: 'p:1', vault: V1, from: '0x00000000000000000000000000000000000000b1', amount: 1n, block: 1n, txHash: h1, timestamp: 5, timestampUnavailable: true });
   const vuelta = deserialize(serialize(s));
   assert.equal(vuelta.payments.get('p:0')!.timestampUnavailable, true);
+  assert.equal(vuelta.payments.get('p:1')!.timestampUnavailable, undefined);
   // v2 no conocía el campo: deserializa igual y el pago se re-marca en el próximo poll.
   const v2 = JSON.stringify({ version: 2, cursor: null, vaultCursor: null, vaults: [], events: [], sales: [], payments: [{ id: 'p:0', vault: V1, from: '0x00000000000000000000000000000000000000b1', amount: '9', block: '1', txHash: h1 }] });
   assert.equal(deserialize(v2).payments.get('p:0')!.timestampUnavailable, undefined);

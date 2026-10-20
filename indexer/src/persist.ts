@@ -79,6 +79,7 @@ export function deserialize(text: string): Store {
       ...optBool('timestampUnavailable', x.timestampUnavailable), // v3; un store viejo sin el campo reintenta y re-marca si sigue podado
       ...opt('saleId', x.saleId),
     };
+    if (p.timestamp != null) delete p.timestampUnavailable; // la fecha manda: un archivo viejo puede traer las dos cosas
     s.payments.set(p.id, p);
   }
   return s;
