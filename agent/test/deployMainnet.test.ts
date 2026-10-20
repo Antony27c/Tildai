@@ -42,11 +42,18 @@ function fakeWallet(send: (args: { nonce?: number }) => Promise<Hex> = async () 
   };
 }
 
+type Receipt = { status: string; contractAddress: Address | null; blockNumber: bigint };
+
 function fakeReader(
   opts: {
     codeAt?: Record<string, Hex>;
     counts?: { pending?: number; latest?: number };
-    receipt?: { status: string; contractAddress: Address | null; blockNumber: bigint };
+    nonceCountAt?: (blockNumber: bigint) => number;
+    blockNumber?: bigint;
+    txsAt?: Record<string, { hash: Hex; from: Address; to: Address | null; nonce: number }[]>;
+    receipts?: Record<string, Receipt>;
+    receipt?: Receipt;
+    receiptError?: Error;
   } = {},
 ) {
   const tokens = new Set([WARS, USDT, ...TEXTILE].map((a) => getAddress(a)));
@@ -54,10 +61,17 @@ function fakeReader(
   return {
     getChainId: async () => 42220,
     getCode: async ({ address }: { address: Address }) => opts.codeAt?.[getAddress(address)] ?? (tokens.has(getAddress(address)) ? "0x6001" : "0x"),
-    getTransactionCount: async ({ blockTag }: { blockTag: "latest" | "pending" }) => (blockTag === "pending" ? (opts.counts?.pending ?? 0) : (opts.counts?.latest ?? 0)),
+    getTransactionCount: async ({ blockTag, blockNumber }: { blockTag?: "latest" | "pending"; blockNumber?: bigint }) =>
+      blockNumber !== undefined ? (opts.nonceCountAt?.(blockNumber) ?? 0) : blockTag === "pending" ? (opts.counts?.pending ?? 0) : (opts.counts?.latest ?? 0),
+    getBlockNumber: async () => opts.blockNumber ?? 100n,
+    getBlock: async ({ blockNumber }: { blockNumber: bigint }) => ({ transactions: opts.txsAt?.[blockNumber.toString()] ?? [] }),
+    getTransactionReceipt: async ({ hash }: { hash: Hex }) => opts.receipts?.[hash] ?? null,
     call: async () => ({ data: "0x" }),
     readContract: async ({ functionName }: { functionName: string }) => knownReads[functionName],
-    waitForTransactionReceipt: async () => opts.receipt,
+    waitForTransactionReceipt: async () => {
+      if (opts.receiptError) throw opts.receiptError;
+      return opts.receipt;
+    },
   };
 }
 
@@ -97,13 +111,94 @@ test("recupera la factory si ya hay código en expectedFactory", async () => {
   const wallet = fakeWallet();
   const { ctx: c, saves } = ctx({
     wallet,
-    state: { deployNonce: 3, expectedFactory: expected, bytecodeHash: keccak256(ARTIFACT.bytecode) },
-    reader: fakeReader({ codeAt: { [getAddress(expected)]: ONCHAIN_RUNTIME } }),
+    state: { deployNonce: 3, expectedFactory: expected, factoryTx: HASH, bytecodeHash: keccak256(ARTIFACT.bytecode) },
+    reader: fakeReader({
+      codeAt: { [getAddress(expected)]: ONCHAIN_RUNTIME },
+      receipts: { [HASH]: { status: "success", contractAddress: expected, blockNumber: 50n } },
+    }),
   });
   await deploy(c);
   assert.equal(c.state.factory, expected);
+  assert.equal(c.state.factoryBlock, "50");
   assert.equal(wallet.sent.length, 0, "no tiene que mandar otra tx");
   assert.ok(saves.at(-1)?.factory);
+});
+
+test("recupera sin factoryTx: busca la tx por nonce, verifica su tag y anota el bloque", async () => {
+  const expected = getContractAddress({ from: AGENT, nonce: 3n });
+  const DEPLOY_HASH = `0x${"77".repeat(32)}` as Hex;
+  const tagged: Hex[] = [];
+  const { ctx: c } = ctx({
+    verifyTag: async (hash: Hex) => (tagged.push(hash), { codes: [ATTRIBUTION_CODE] }),
+    state: { deployNonce: 3, expectedFactory: expected, bytecodeHash: keccak256(ARTIFACT.bytecode) },
+    reader: fakeReader({
+      codeAt: { [getAddress(expected)]: ONCHAIN_RUNTIME },
+      blockNumber: 100n,
+      nonceCountAt: (b) => (b >= 50n ? 4 : 3), // el nonce 3 se gastó en el bloque 50
+      txsAt: { "50": [{ hash: DEPLOY_HASH, from: AGENT, to: null, nonce: 3 }] },
+      receipts: { [DEPLOY_HASH]: { status: "success", contractAddress: expected, blockNumber: 50n } },
+    }),
+  });
+  await deploy(c);
+  assert.equal(c.state.factory, expected);
+  assert.equal(c.state.factoryBlock, "50");
+  assert.deepEqual(tagged, [DEPLOY_HASH]);
+});
+
+test("no da por buena una factory recuperada si la tx no lleva el tag", async () => {
+  const expected = getContractAddress({ from: AGENT, nonce: 3n });
+  const { ctx: c } = ctx({
+    verifyTag: async () => ({ codes: ["otro_codigo"] }),
+    state: { deployNonce: 3, expectedFactory: expected, factoryTx: HASH, bytecodeHash: keccak256(ARTIFACT.bytecode) },
+    reader: fakeReader({
+      codeAt: { [getAddress(expected)]: ONCHAIN_RUNTIME },
+      receipts: { [HASH]: { status: "success", contractAddress: expected, blockNumber: 50n } },
+    }),
+  });
+  await assert.rejects(deploy(c), /tag/);
+  assert.equal(c.state.factory, undefined);
+});
+
+test("no da por buena una factory si no aparece la tx que la creó", async () => {
+  const expected = getContractAddress({ from: AGENT, nonce: 3n });
+  const { ctx: c } = ctx({
+    state: { deployNonce: 3, expectedFactory: expected, bytecodeHash: keccak256(ARTIFACT.bytecode) },
+    reader: fakeReader({
+      codeAt: { [getAddress(expected)]: ONCHAIN_RUNTIME },
+      blockNumber: 100n,
+      nonceCountAt: (b) => (b >= 50n ? 4 : 3),
+      txsAt: { "50": [] }, // el bloque no tiene la create tx
+    }),
+  });
+  await assert.rejects(deploy(c), /no encontré la tx.*revisar a mano/i);
+  assert.equal(c.state.factory, undefined);
+});
+
+test("con factoryTx guardado y sin código espera su recibo, no reenvía", async () => {
+  const expected = getContractAddress({ from: AGENT, nonce: 3n });
+  const wallet = fakeWallet();
+  const { ctx: c } = ctx({
+    wallet,
+    state: { deployNonce: 3, expectedFactory: expected, factoryTx: HASH, bytecodeHash: keccak256(ARTIFACT.bytecode) },
+    reader: fakeReader({ receipt: { status: "success", contractAddress: expected, blockNumber: 51n } }),
+  });
+  await deploy(c);
+  assert.equal(wallet.sent.length, 0);
+  assert.equal(c.state.factory, expected);
+  assert.equal(c.state.factoryBlock, "51");
+});
+
+test("si el recibo de factoryTx no aparece, corta con aviso y no reenvía", async () => {
+  const expected = getContractAddress({ from: AGENT, nonce: 3n });
+  const wallet = fakeWallet();
+  const { ctx: c } = ctx({
+    wallet,
+    state: { deployNonce: 3, expectedFactory: expected, factoryTx: HASH, bytecodeHash: keccak256(ARTIFACT.bytecode) },
+    reader: fakeReader({ receiptError: new Error("Timed out while waiting for transaction") }),
+  });
+  await assert.rejects(deploy(c), /Timed out/);
+  assert.equal(wallet.sent.length, 0);
+  assert.equal(c.state.factory, undefined);
 });
 
 test("dry run solo informa la recuperación, no escribe", async () => {
