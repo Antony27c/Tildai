@@ -1,5 +1,12 @@
 # Traspaso del rol de coordinador (18/10/2026, actualizado al cambio de cuenta)
 
+> **Pausa 19/10 a la noche (coordina Devin, todo frenado a pedido del dueño).** Mergeado en `Antony27c/Tildai` (`ecc2c12`): indexer `/stats` + config/apagado (`9b3576d`), `devin-web` `/metricas` y `/cartel` (`638d724`), `gemini-textile` README de entrega, `docs/demo.md`, scripts de mainnet recuperables y test del attribution tag (`61603e7`). Circuito: el agente termina → `orca terminal send` "LISTO <rama> <hash>" a su tester → el tester revisa en su worktree (`tester-backend` revisa agent/indexer/scripts, `tester-web` revisa frontend/web/docs) y avisa al coordinador "REVISION … se puede mergear: SI|NO". Informes en `C:/Users/pansi/orca/workspaces/BuilderSession/reviews/` (fuera del repo), tareas en `reviews/tareas/*.txt`. Se mergea solo el hash aprobado, no la punta. **Para retomar:** reabrir las sesiones de Devin (`devin -r`) y reenviar a cada agente su tarea:
+> - `devin-agent` (`d24541b` + cambios SIN COMMIT): `tareas/fix-agent.txt` (bloqueante: tope de altas con /start simultáneos) + 2 hallazgos de avisos (x402 avisa "pago sin venta" en vez de "venta"; un chat que bloquea al bot frena a todos).
+> - `devin-indexer` (`28b3df4` + cambios SIN COMMIT en `indexer.ts`): bug de forno "block is more than 10064 blocks behind head" (pagos viejos quedan sin timestamp y `/payments` da 503 para siempre). `b4a15a5` (txHashes, chainId) y `28b3df4` sin revisar.
+> - `devin-frontend`: A `tareas/fa3.txt` (metadata/OG/íconos; `web/public/brand/` sin commitear), B `tareas/fix-fb.txt` (panel), C `8054e97` (seguridad x402) sin revisar + `tareas/fc3.txt` (MiniPay). Se mergea cuando A, B y C estén aprobados sobre el mismo commit.
+> - `devin-web` `9d7ffaf` (`/comprobante`) y `gemini-textile` `537cd4b` (`docs/comercio.md`) entregados, sin revisar; `gemini-textile` además tenía que arreglar el redeploy de factory si `sendTransaction` falla tras difundir (`deploy-mainnet.ts`, guardar nonce).
+> - Decisión pendiente del dueño: `transferOwnership` en dos pasos en `TildaiVault` (requiere grill antes de tocar `contracts/`). El dueño está generando el wordmark en alta (`wordmark.png`, `wordmark-blanco.png`) para que A lo integre.
+
 > **Actualización 19/10 (coordina Claude Code):** la cuarta tanda (alta `/start`, endpoints `/sales` `/payments` `/events`, botón "Pagar con wARS") está revisada, corregida y mergeada en `Antony27c/Tildai` (`da20731`; tests: agent 61, indexer 49, web 37). Frontend nuevo en el worktree `devin-frontend` (rama `Antony27c/devin-frontend`), con tres Devin: 1) sistema visual + landing, 2) panel del comercio `/panel`, 3) pulido de la página de cobro. Usan las skills `impeccable` y `taste-skill` de `.agents/skills/`, instaladas sin hooks ni binarios. Pendientes que vio la revisión: el canal de Telegram queda abierto al `/start` (rate-limit o allowlist antes de mainnet), `cierre_caja` solo corre para el vault del dueño y un `createVault` que nunca se mina deja el chat "pendiente".
 
 Quien lea esto toma el rol de **coordinador** de Tildai: reparte tareas a los agentes, revisa su código antes de mergear y protege las reglas de `AGENTS.md`. Antes de nada leé `AGENTS.md` e `idea.md`.
@@ -46,8 +53,15 @@ Quien lea esto toma el rol de **coordinador** de Tildai: reparte tareas a los ag
 El dueño decidió **no comprar USD₮ por ahora** (18/10). Cuando cambie de opinión, en orden:
 
 1. Fondear `0x2B7c25FedB6d09e149fedc1ffE35529b1cab1f65` con 2–3 USD₮ en Celo mainnet (compra en Ripio, retiro por red Celo).
-2. `cd agent && set CONFIRM_MAINNET=1 && node scripts/register-8004.ts celo` — registra la identidad ERC-8004 (registry `0x8004A169FB4a3325136EB29fA0ceB6D2e539a432`).
-3. `cd agent && set CONFIRM_MAINNET=1 && node scripts/deploy-mainnet.ts` — factory + vault. Paga gas en USD₮ por fee abstraction.
+2. Registrar la identidad ERC-8004 (registry `0x8004A169FB4a3325136EB29fA0ceB6D2e539a432`). Desde `agent/`:
+   - PowerShell: `$env:CONFIRM_MAINNET="1"; node scripts/register-8004.ts celo`
+   - cmd: `set "CONFIRM_MAINNET=1"` y después `node scripts/register-8004.ts celo`
+   - Ojo: `set CONFIRM_MAINNET=1 && ...` en cmd guarda `"1 "` (con espacio) y en PowerShell `set` no toca el entorno: en los dos casos el script hace solo dry run.
+3. Desplegar la factory (solo la factory: el primer vault sale del `/start`). Antes, `forge build --force` en `contracts/` desde un checkout limpio. Primero el dry run (`node scripts/deploy-mainnet.ts`, sin la variable) y después, desde `agent/`:
+   - PowerShell: `$env:CONFIRM_MAINNET="1"; node scripts/deploy-mainnet.ts`
+   - cmd: `set "CONFIRM_MAINNET=1"` y después `node scripts/deploy-mainnet.ts`
+   - Paga gas en USD₮ por fee abstraction. Guarda `factoryTx`, commit y hash del bytecode en `contracts/deployments/celo.json` apenas envía; si se corta, volver a correrlo busca el recibo en vez de redesplegar.
+   - Al terminar, `Remove-Item Env:CONFIRM_MAINNET` (PowerShell) o `set "CONFIRM_MAINNET="` (cmd).
 4. Falta `X402_API_KEY` del facilitador de mainnet (pedirla) y crear el proyecto en Loops (`loops project fields --event agents-on-open-rails`, `project create` sin `--confirm`, mostrarlo al dueño primero).
 5. Primer swap real en Textile: chico, el corredor wARS/USD₮ tiene volumen casi nulo.
 

@@ -1,3 +1,4 @@
+import { setTimeout as sleep } from 'node:timers/promises';
 import { parseAbi } from 'viem';
 import { eachChunk, withRetry, type RetryOpts } from './rpc.ts';
 
@@ -28,12 +29,12 @@ export interface ChainReader {
   }): Promise<Log[]>;
 }
 
-export type Sale = { id: string; vault: string; amount: bigint; createdBlock: bigint; createdAt: number; status: 'pendiente' | 'cobrada'; paymentId?: string; txHash?: string };
+export type Sale = { id: string; vault: string; amount: bigint; createdBlock: bigint; createdAt: number; status: 'pendiente' | 'cobrada'; paymentId?: string; txHashes: string[] };
 export type Payment = { id: string; vault: string; from: string; amount: bigint; block: bigint; txHash: string; timestamp?: number; saleId?: string };
 // Eventos para el agente: seq crece de a 1 y es el cursor de GET /events.
 export type StoreEvent = { seq: number; type: 'venta_cobrada' | 'pago_sin_venta'; paymentId: string; saleId?: string };
 
-// shortcut: store en memoria, se pierde al reiniciar; cambiar por DB antes de usarlo con plata real.
+// shortcut: store en memoria volcado a JSON por save() tras cada cambio; cambiar por DB antes de usarlo con plata real.
 export class Store {
   sales = new Map<string, Sale>();
   payments = new Map<string, Payment>();
@@ -49,7 +50,7 @@ export class Store {
   addSale(s: { id: string; vault: string; amount: bigint; createdBlock: bigint; createdAt: number }): Sale {
     if (this.sales.has(s.id)) throw new IndexerError('conflict', `venta duplicada: ${s.id}`);
     if (s.amount <= 0n) throw new IndexerError('invalid', 'el monto debe ser positivo');
-    const sale: Sale = { ...s, vault: s.vault.toLowerCase(), status: 'pendiente' };
+    const sale: Sale = { ...s, vault: s.vault.toLowerCase(), status: 'pendiente', txHashes: [] };
     this.sales.set(s.id, sale);
     return sale;
   }
@@ -93,11 +94,11 @@ export type IndexerOpts = {
 };
 
 // Cruza un pago con la venta pendiente más vieja del mismo vault y monto exacto, creada en o antes del bloque del pago.
-// Las ventas atadas a una tx (x402) solo las cobra esa tx, ver settleByTx.
+// Una venta con hashes x402 informados también la cobra un pago real que coincide: un hash ajeno no la puede trabar.
 function reconcile(store: Store, p: Payment): boolean {
   if (p.saleId) return false;
   for (const s of store.sales.values()) {
-    if (s.status === 'pendiente' && !s.txHash && s.vault === p.vault && s.amount === p.amount && p.block >= s.createdBlock) {
+    if (s.status === 'pendiente' && s.vault === p.vault && s.amount === p.amount && p.block >= s.createdBlock) {
       claim(store, s, p);
       return true;
     }
@@ -112,11 +113,11 @@ function claim(store: Store, s: Sale, p: Payment) {
   p.saleId = s.id;
 }
 
-// Cobra la venta solo si el indexador ya vio, confirmado, un Transfer de esa tx al vault de la venta por el monto exacto y sin dueño.
+// Cobra la venta solo si el indexador ya vio, confirmado, un Transfer de alguna de las tx informadas al vault de la venta por el monto exacto y sin dueño.
 function settleByTx(store: Store, s: Sale): boolean {
-  if (s.status !== 'pendiente' || !s.txHash) return false;
+  if (s.status !== 'pendiente' || !s.txHashes.length) return false;
   for (const p of store.payments.values()) {
-    if (p.txHash === s.txHash && !p.saleId && p.vault === s.vault && p.amount === s.amount && p.block >= s.createdBlock) {
+    if (s.txHashes.includes(p.txHash) && !p.saleId && p.vault === s.vault && p.amount === s.amount && p.block >= s.createdBlock) {
       claim(store, s, p);
       return true;
     }
@@ -215,11 +216,11 @@ export function createIndexer(o: IndexerOpts) {
     }
   }
 
-  // Reintenta en el próximo tick; para con la señal.
+  // Reintenta en el próximo tick; para con la señal, también a mitad del sleep.
   async function watch(ms: number, signal: AbortSignal) {
     while (!signal.aborted) {
       await pollOnce();
-      await new Promise((r) => setTimeout(r, ms));
+      await sleep(ms, undefined, { signal }).catch(() => {}); // AbortError al abortar: el while sale
     }
   }
 
@@ -231,7 +232,8 @@ export function createIndexer(o: IndexerOpts) {
   }
 
   // Pago x402: el hash lo informa el facilitador pero no se le cree. Queda pendiente hasta que un poll vea el Transfer confirmado.
-  // shortcut: una tx equivocada deja la venta pendiente para siempre sin aviso; agregar vencimiento y alerta al dueño.
+  // Se guardan hasta 5 hashes sin repetir: un hash erróneo o ajeno no tapa al pago bueno.
+  // shortcut: una venta cuyo pago nunca llega queda pendiente para siempre sin aviso; agregar vencimiento y alerta al dueño.
   async function markPaidByTx(saleId: string, txHash: string): Promise<Sale['status']> {
     const s = store.sales.get(saleId);
     if (!s) throw new IndexerError('not_found', `venta inexistente: ${saleId}`);
@@ -241,7 +243,9 @@ export function createIndexer(o: IndexerOpts) {
       if (store.payments.get(s.paymentId!)?.txHash === tx) return 'cobrada';
       throw new IndexerError('conflict', `la venta ${saleId} ya está cobrada con otro pago`);
     }
-    s.txHash = tx;
+    if (s.txHashes.includes(tx)) return s.status;
+    if (s.txHashes.length >= 5) throw new IndexerError('conflict', `la venta ${saleId} ya tiene 5 tx informadas`);
+    s.txHashes.push(tx);
     settleByTx(store, s);
     await o.save?.(store);
     return s.status;

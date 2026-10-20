@@ -40,6 +40,7 @@ function storeConDatos() {
     pay(5, V1, 7n, UTC(2026, 9, 19, 2, 59, 59)), // 18/10 23:59:59 AR
     pay(6, V1, 8n, UTC(2026, 9, 19, 3, 0, 0)), // 19/10 00:00:00 AR
     pay(7, V2, 40n, UTC(2026, 9, 13, 12)),
+    pay(8, V3, 5n, UTC(2026, 9, 12, 12)), // día AR 12/10: dentro de 7x24h, fuera de los 7 días calendario AR
   ]) s.payments.set(p.id, p);
   return s;
 }
@@ -47,29 +48,31 @@ function storeConDatos() {
 const byDay = (r: ReturnType<typeof stats>, day: string) => r.byDay.find((x) => x.day === day)!;
 
 test('stats: totales con bigint, activos a 7 días y pagos sin timestamp', () => {
-  const r = stats(storeConDatos(), NOW);
+  const r = stats(storeConDatos(), 42220, NOW);
+  assert.equal(r.chainId, 42220); // viene de la config, así /metricas no adivina la red
   assert.equal(r.vaults, 3);
-  assert.equal(r.payments, 7);
+  assert.equal(r.payments, 8);
   assert.equal(r.salesCobradas, 1);
-  assert.equal(r.warsReceived, '1434'); // 100+250+30+999+7+8+40, sin floats
+  assert.equal(r.warsReceived, '1439'); // 100+250+30+999+7+8+40+5, sin floats
   assert.equal(r.paymentsWithoutTimestamp, 1);
-  assert.equal(r.activeVaults7d, 2); // V3 no tiene pagos; el de V2 del 8/10 ya tiene más de 7 días
+  assert.equal(r.activeVaults7d, 2); // 7 días calendario AR (13/10 a 19/10): el pago de V3 fue el 12/10 y el de V2 el 8/10
   assert.equal(r.generatedAt, new Date(NOW).toISOString());
 });
 
 test('stats: byDay son 14 días en hora argentina, con días vacíos en cero', () => {
-  const r = stats(storeConDatos(), NOW);
+  const r = stats(storeConDatos(), 42220, NOW);
   assert.equal(r.byDay.length, 14);
   assert.equal(r.byDay[0].day, '2026-10-06');
   assert.equal(r.byDay.at(-1)!.day, '2026-10-19');
   assert.deepEqual(byDay(r, '2026-10-08'), { day: '2026-10-08', payments: 1, warsReceived: '250' });
   assert.deepEqual(byDay(r, '2026-10-13'), { day: '2026-10-13', payments: 1, warsReceived: '40' });
   assert.deepEqual(byDay(r, '2026-10-15'), { day: '2026-10-15', payments: 1, warsReceived: '100' });
+  assert.deepEqual(byDay(r, '2026-10-12'), { day: '2026-10-12', payments: 1, warsReceived: '5' });
   assert.deepEqual(byDay(r, '2026-10-18'), { day: '2026-10-18', payments: 1, warsReceived: '7' });
   assert.deepEqual(byDay(r, '2026-10-19'), { day: '2026-10-19', payments: 1, warsReceived: '8' });
   assert.deepEqual(byDay(r, '2026-10-07'), { day: '2026-10-07', payments: 0, warsReceived: '0' });
-  // p3 (1/10) queda afuera de la ventana de 14 días y p4 no tiene timestamp: solo 5 entran en byDay.
-  assert.equal(r.byDay.reduce((n, d) => n + d.payments, 0), 5);
+  // p3 (1/10) queda afuera de la ventana de 14 días y p4 no tiene timestamp: solo 6 entran en byDay.
+  assert.equal(r.byDay.reduce((n, d) => n + d.payments, 0), 6);
 });
 
 test('stats: la medianoche argentina es a las 03:00 UTC', () => {
@@ -77,7 +80,7 @@ test('stats: la medianoche argentina es a las 03:00 UTC', () => {
   s.vaults.set(V1, '0x00000000000000000000000000000000000000c1');
   s.payments.set('a:0', pay(1, V1, 1n, UTC(2026, 9, 19, 2, 59, 59, 999)));
   s.payments.set('b:0', pay(2, V1, 2n, UTC(2026, 9, 19, 3, 0, 0)));
-  const r = stats(s, NOW);
+  const r = stats(s, 42220, NOW);
   assert.equal(byDay(r, '2026-10-18').warsReceived, '1');
   assert.equal(byDay(r, '2026-10-19').warsReceived, '2');
 });
@@ -87,7 +90,7 @@ test('stats: sobrevive un reinicio leyendo el JSON persistido', async () => {
   const original = storeConDatos();
   await saveStore(original, path);
   const cargado = await loadStore(path);
-  assert.deepEqual(stats(cargado, NOW), stats(original, NOW));
+  assert.deepEqual(stats(cargado, 42220, NOW), stats(original, 42220, NOW));
 });
 
 let server: Server;
@@ -95,7 +98,7 @@ let base: string;
 before(async () => {
   const store = storeConDatos();
   const indexer = { createSale: async () => { throw new Error('no usado'); }, markPaidByTx: async () => { throw new Error('no usado'); } };
-  server = createApp({ indexer, store, token: TOKEN, onError: () => {} });
+  server = createApp({ indexer, store, token: TOKEN, chainId: 42220, onError: () => {} });
   await new Promise<void>((ok) => server.listen(0, '127.0.0.1', ok));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
@@ -109,10 +112,11 @@ test('GET /stats: 401 sin token y 200 con la forma esperada', async () => {
   assert.equal((await get('/stats', null)).status, 401);
   const r = await get('/stats');
   assert.equal(r.status, 200);
+  assert.equal(r.body.chainId, 42220);
   assert.equal(r.body.vaults, 3);
-  assert.equal(r.body.payments, 7);
+  assert.equal(r.body.payments, 8);
   assert.equal(r.body.salesCobradas, 1);
-  assert.equal(r.body.warsReceived, '1434');
+  assert.equal(r.body.warsReceived, '1439');
   assert.equal(r.body.paymentsWithoutTimestamp, 1);
   const byDay = r.body.byDay as { day: string; payments: number; warsReceived: string }[];
   assert.equal(byDay.length, 14);

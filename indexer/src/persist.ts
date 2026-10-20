@@ -25,7 +25,7 @@ const arr = (x: unknown, what: string): unknown[] => {
 export function serialize(s: Store): string {
   return JSON.stringify(
     {
-      version: 1,
+      version: 2,
       cursor: s.cursor?.toString() ?? null,
       vaultCursor: s.vaultCursor?.toString() ?? null,
       vaults: [...s.vaults],
@@ -56,10 +56,13 @@ export function deserialize(text: string): Store {
   }
   for (const x of arr(d.sales, 'sales') as Record<string, unknown>[]) {
     if (x.status !== 'pendiente' && x.status !== 'cobrada') throw new Error(`estado de venta inválido: ${x.status}`);
+    // En v1 el hash venía suelto en txHash; se lee como lista de un elemento.
+    const txHashes = x.txHashes != null ? arr(x.txHashes, 'sale.txHashes').map((t) => str(t, 'sale.txHashes')) : x.txHash == null ? [] : [str(x.txHash, 'sale.txHash')];
     const sale: Sale = {
       id: str(x.id, 'sale.id'), vault: str(x.vault, 'sale.vault'), amount: big(x.amount, 'sale.amount'),
       createdBlock: big(x.createdBlock, 'sale.createdBlock'), createdAt: ms(x.createdAt ?? 0, 'sale.createdAt'), status: x.status,
-      ...opt('paymentId', x.paymentId), ...opt('txHash', x.txHash),
+      txHashes,
+      ...opt('paymentId', x.paymentId),
     };
     s.sales.set(sale.id, sale);
   }

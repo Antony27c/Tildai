@@ -12,7 +12,7 @@ Agente de caja con tools `crear_cobro`, `ventas_hoy`, `aviso_pago` y un schedule
    TELEGRAM_BOT_USERNAME=tu_bot
    TILDAI_OWNER_CHAT_ID=<tu chat id>
    ```
-   Si todavía no sabés tu chat id, dejá `TILDAI_OWNER_CHAT_ID` vacío: el bot ignora todo y loguea el id del chat que le escribió.
+   Con `TILDAI_OWNER_CHAT_ID` definido el bot ignora los demás chats y loguea su id. Vacío, cualquier chat privado puede hacer `/start` y crear su vault (no usarlo así en mainnet).
 3. Credenciales del modelo (AI Gateway o `ANTHROPIC_API_KEY`) con `/login` en la TUI de eve.
 4. `npm run dev` abre la TUI. Para Telegram exponé el puerto (ej. con un túnel) y registrá el webhook:
    ```
@@ -28,10 +28,10 @@ Agente de caja con tools `crear_cobro`, `ventas_hoy`, `aviso_pago` y un schedule
 
 ## Límites actuales
 
-- Ventas en memoria (se pierden al reiniciar) y un solo comercio.
+- Ventas en memoria (se pierden al reiniciar). El cierre de caja corre solo para el vault de `TILDAI_OWNER_CHAT_ID` / `TILDAI_VAULT`, no para cada vault creado con `/start`.
 - Una venta es cobrada solo con un `Transfer` confirmado; si el vault falla queda pendiente. El pago se asocia a la venta pendiente más vieja con el mismo monto.
-- El link de pago apunta a `TILDAI_PAY_BASE_URL` (la página de cobro todavía no existe).
-- No hay push automático de "pago recibido": el aviso sale al llamar `aviso_pago`.
+- El link de pago apunta a `TILDAI_PAY_BASE_URL` (la página de cobro de `web/`).
+- No hay push automático de "pago recibido": el aviso sale al llamar `aviso_pago`. El agente no usa el indexer (lee los logs de la cadena directo).
 
 ## Vault real (Celo)
 
