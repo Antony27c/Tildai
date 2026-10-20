@@ -20,6 +20,7 @@ Variables (si falta o es inválida alguna obligatoria, el proceso falla al inici
 | `TILDAI_FACTORY` | Dirección de la factory. Obligatoria en mainnet; en Sepolia sale de `contracts/deployments/celo-sepolia.json`. |
 | `TILDAI_FROM_BLOCK` | Bloque de deploy de la factory. Obligatorio en mainnet. |
 | `RPC_URL` | Default: Forno de la red. |
+| `TILDAI_ARCHIVE_RPC_URL` | Opcional. Nodo de archivo: solo se consulta para la fecha de bloques que el RPC principal ya podó (Forno poda > ~10.000 bloques, unas 3 h). Sin él, esos pagos quedan sin fecha (`timestampUnavailable`). |
 | `TILDAI_WARS` | Default: wARS de la red. |
 | `TILDAI_PORT` / `TILDAI_HOST` | Default `8787` / `127.0.0.1`. |
 | `TILDAI_POLL_SECONDS` | Segundos entre polls, entero. Default `10`. |
@@ -38,7 +39,7 @@ Toda ruta exige `Authorization: Bearer <TILDAI_INDEXER_TOKEN>` salvo `GET /healt
 | `POST /sales/:id/tx` `{txHash}` | Ata la venta a una tx x402; cobra solo si el `Transfer` confirmado coincide (200; 404; 409) |
 | `GET /sales/:id` | Una venta: `{id, vault, amount, status, txHashes, txHash? (último, compat)}` (200; 404) |
 | `GET /sales?vault=&since=&until=` | Ventas del vault en el rango de creación |
-| `GET /payments?vault=&since=&until=` | Pagos confirmados al vault; con rango, 503 si falta algún timestamp; sin rango, vienen con `timestamp: null` |
+| `GET /payments?vault=&since=&until=` | Pagos confirmados al vault (array). Con rango: 503 solo si algún pago espera fecha por un error transitorio; los `timestampUnavailable` (bloque podado, permanente) se excluyen. Sin rango: vienen con `timestamp: null` y `timestampUnavailable: true` |
 | `GET /events?since=` | Eventos `{seq, type, paymentId, saleId?, payment}` de a 500; `cursor` es el `seq` del último devuelto |
 | `GET /stats` | Métricas para la entrega: `{chainId, vaults, activeVaults7d, payments, salesCobradas, warsReceived, paymentsWithoutTimestamp, byDay[14] en hora AR, generatedAt}` |
 | `GET /health` | `{cursor, vaults}`, sin auth |
