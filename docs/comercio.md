@@ -2,9 +2,8 @@
 
 Esta guía es para vos, que tenés un comercio y querés cobrar con Tildai. No hace falta saber nada de tecnología. Si algo no te queda claro, preguntale al equipo que te acompaña.
 
-Marcas que vas a ver:
+Marca que vas a ver:
 - **[PENDIENTE MAINNET]**: todavía no funciona con plata de verdad. Lo estamos terminando.
-- **[PRÓXIMA VERSIÓN]**: está hecho, pero todavía no está publicado.
 
 ## 1. Qué es Tildai
 
@@ -49,11 +48,11 @@ Necesitás una billetera en el celular. Es donde vas a recibir la plata cuando l
 
 ## 3. Darte de alta
 
-Hoy el alta la hace el equipo junto con vos. [PRÓXIMA VERSIÓN] Va a ser por invitación: solo van a entrar los chats que habilite el equipo.
+Hoy el alta es por invitación: solo entran los chats que habilita el equipo.
 
 1. El equipo te pasa el nombre del bot de Tildai en Telegram.
 2. Abrilo y escribile. Mejor por privado que en un grupo, así no compartís tus datos con nadie más.
-3. [PRÓXIMA VERSIÓN] Si te contesta *"El alta es por invitación y está cerrada para este chat"*, avisale al equipo que ya le escribiste. Ellos habilitan tu chat y te avisan.
+3. Si te contesta *"El alta es por invitación y está cerrada para este chat"*, avisale al equipo que ya le escribiste. Ellos habilitan tu chat y te avisan.
 4. Escribí `/start`.
 5. El bot te pide tu dirección. Pegá la dirección que copiaste (la que empieza con `0x`).
    - Si pegás por error una clave o tus palabras secretas, el bot no la lee y te pide que la borres. Borrala y, por las dudas, creá una billetera nueva.
@@ -91,11 +90,11 @@ Hoy el alta la hace el equipo junto con vos. [PRÓXIMA VERSIÓN] Va a ser por in
 **El aviso:**
 - Una venta se marca como cobrada solo cuando el pago está confirmado. Si no se pudo verificar, queda "pendiente", nunca "cobrada".
 - Si todavía no te llega el aviso solo, preguntale al bot *"¿me pagaron?"*. Te contesta, por ejemplo, *"✓ Entraron $ 8.500 (venta #3)"*.
-- [PRÓXIMA VERSIÓN] Tildai te va a avisar cada venta sin que preguntes: *"Entró una venta: $ 8.500 ✓"*. Si entra plata sin un cobro pedido (por ejemplo, del cartel), te dice *"Te llegó un pago de $ … sin venta asociada"*.
+- Tildai te avisa cada venta sin que preguntes: *"Entró una venta: $ 8.500 ✓"*. Si entra plata sin un cobro pedido (por ejemplo, del cartel), te dice *"Te llegó un pago de $ … sin venta asociada"*.
 
-## 5. El cierre de caja de la noche [PRÓXIMA VERSIÓN]
+## 5. El cierre de caja de la noche
 
-Hoy el cierre automático corre solo para la caja del equipo. El cierre por cada comercio está hecho pero todavía no está publicado. Cuando esté, todos los días a las **21 h** te llega un mensaje con:
+Todos los días a las **21 h** te llega un mensaje con:
 - El total del día.
 - Cuántas ventas hiciste.
 - El ticket promedio (cuánto gastó cada cliente, en promedio).
@@ -137,8 +136,8 @@ Hoy el cierre automático corre solo para la caja del equipo. El cierre por cada
 
 **El cliente dice que pagó y no me llegó el aviso. ¿Qué hago?**
 1. Preguntale al bot *"¿me pagaron?"*.
-2. [PRÓXIMA VERSIÓN] Pedile al cliente el número de operación que le muestra su billetera y pasáselo al equipo. Te abren el comprobante, que dice si el pago a una caja de Tildai está "confirmado en la red" o "esperando confirmación" (para el equipo: la página `/comprobante` con el número de operación).
-3. [PRÓXIMA VERSIÓN] Pedile al equipo el link de tu panel del día (para el equipo: la página `/panel` con tu caja). Ahí ves lo cobrado hoy y cada cobro con su hora.
+2. Pedile al cliente el número de operación que le muestra su billetera y pasáselo al equipo. Te abren el comprobante, que dice si el pago a una caja de Tildai está "confirmado en la red" o "esperando confirmación" (para el equipo: la página `/comprobante` con el número de operación).
+3. Pedile al equipo el link de tu panel del día (para el equipo: la página `/panel` con tu caja). Ahí ves lo cobrado hoy y cada cobro con su hora.
 4. Si el pago no aparece en ningún lado, no entregues la mercadería hasta que aparezca.
 
 **¿Y si pierdo el celular?**
@@ -159,12 +158,12 @@ Hoy, nada. La caja no descuenta comisión.
 ## Fuentes
 
 Del código de Tildai:
-- Alta y permisos del chat: `agent/channels/telegram.ts`, `agent/src/alta.ts` y `agent/tools/crear_vault.ts` (rama `Antony27c/devin-agent`): alta por invitación, tope sugerido $100.000 y máximo $10.000.000, precio máximo 1.700 y $60.000 por pase a dólares.
+- Alta y permisos del chat: `agent/channels/telegram.ts`, `agent/src/alta.ts` y `agent/tools/crear_vault.ts`: alta por invitación, tope sugerido $100.000 y máximo $10.000.000, precio máximo 1.700 y $60.000 por pase a dólares.
 - Caja: `contracts/src/TildaiVault.sol` (sin comisión, destinos permitidos, tope diario, sobres de ahorro e impuestos y retiro total del dueño).
-- Cobro, aviso y cierre: `agent/src/sales.ts`, `agent/src/cierreApartado.ts`, `agent/schedules/cierre_caja.ts` (porcentajes por `TILDAI_SAVINGS_PCT` y `TILDAI_TAXES_PCT`) y `agent/src/avisos.ts` (rama `Antony27c/devin-agent`).
+- Cobro, aviso y cierre: `agent/src/sales.ts`, `agent/src/cierreApartado.ts`, `agent/schedules/cierre_caja.ts` (porcentajes por `TILDAI_SAVINGS_PCT` y `TILDAI_TAXES_PCT`), `agent/src/avisos.ts` y `agent/schedules/avisos_ventas.ts`.
 - Retiro y link de Ripio: `agent/tools/retirar.ts` y `agent/src/fondos.ts`.
 - Página de cobro y cartel: `web/app/page.tsx`, `web/app/cartel/page.tsx` y `web/lib/x402.ts` (el cobro con billetera solo funciona en mainnet).
-- Comprobante y panel: `web/app/comprobante/page.tsx` (rama `Antony27c/devin-web`) y `web/app/panel/page.tsx` (rama `Antony27c/devin-frontend`).
+- Comprobante y panel: `web/app/comprobante/page.tsx` y `web/app/panel/page.tsx`.
 
 Páginas oficiales:
 - MiniPay: https://www.opera.com/products/minipay (billetera propia, "Backed up automatically… with your Google account", Android y TestFlight en iPhone).
