@@ -64,7 +64,7 @@ Hoy el alta es por invitación: solo entran los chats que habilita el equipo.
 7. Tildai crea tu caja y te contesta algo así:
    - *"Tu caja está creada: 0x…"* (la dirección de tu caja).
    - *"Tu QR fijo para cobrar es este link: …"*
-   - Tus límites: el tope diario, el precio máximo del dólar (hoy $1.700 por dólar) y lo máximo por cada pase a dólares (hoy $60.000).
+   - Tus límites: el tope diario, el precio máximo del dólar que acepta tu caja (lo fija el equipo el día del deploy y te lo confirma en el alta) y lo máximo por cada pase a dólares ($60.000).
    - *"La plata es siempre tuya…"*
 8. Si te dice que la caja "se está creando", esperá un rato y escribí `/start` de nuevo. No te va a crear dos cajas.
 
@@ -158,7 +158,7 @@ Hoy, nada. La caja no descuenta comisión.
 ## Fuentes
 
 Del código de Tildai:
-- Alta y permisos del chat: `agent/channels/telegram.ts`, `agent/src/alta.ts` y `agent/tools/crear_vault.ts`: alta por invitación, tope sugerido $100.000 y máximo $10.000.000, precio máximo 1.700 y $60.000 por pase a dólares.
+- Alta y permisos del chat: `agent/channels/telegram.ts`, `agent/src/alta.ts` y `agent/tools/crear_vault.ts`: alta por invitación, tope sugerido $100.000 y máximo $10.000.000, precio máximo del dólar por `TILDAI_MAX_RATE` y $60.000 por pase a dólares.
 - Caja: `contracts/src/TildaiVault.sol` (sin comisión, destinos permitidos, tope diario, sobres de ahorro e impuestos y retiro total del dueño).
 - Cobro, aviso y cierre: `agent/src/sales.ts`, `agent/src/cierreApartado.ts`, `agent/schedules/cierre_caja.ts` (porcentajes por `TILDAI_SAVINGS_PCT` y `TILDAI_TAXES_PCT`), `agent/src/avisos.ts` y `agent/schedules/avisos_ventas.ts`.
 - Retiro y link de Ripio: `agent/tools/retirar.ts` y `agent/src/fondos.ts`.
