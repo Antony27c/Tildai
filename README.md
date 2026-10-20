@@ -144,5 +144,6 @@ Atajos conocidos (comentarios `shortcut:` en el código):
 | [`GLOSSARY.md`](GLOSSARY.md) | Vocabulario (vault, cobro, cierre de caja, apartado) |
 | [`docs/adr/`](docs/adr/) | Decisiones de arquitectura (0001: el vault dolariza directo con Textile) |
 | [`docs/textile-fx.md`](docs/textile-fx.md) | Notas de la integración con Textile FX |
+| [`docs/mainnet.md`](docs/mainnet.md) | Runbook del día del deploy a mainnet (requisitos, deploy, arranque, primer cobro, checklist) |
 | [`contexto.md`](contexto.md) | Información de la hackathon |
 | [`AGENTS.md`](AGENTS.md) | Reglas para agentes de código |
