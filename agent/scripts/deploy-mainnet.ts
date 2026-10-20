@@ -56,7 +56,12 @@ export interface DeployCtx {
   reader: {
     getChainId: () => Promise<number>;
     getCode: (args: { address: Address }) => Promise<Hex | undefined>;
-    getTransactionCount: (args: { address: Address; blockTag: "latest" | "pending" }) => Promise<number>;
+    getTransactionCount: (args: { address: Address; blockTag?: "latest" | "pending"; blockNumber?: bigint }) => Promise<number>;
+    getBlockNumber: () => Promise<bigint>;
+    getBlock: (args: { blockNumber: bigint; includeTransactions: true }) => Promise<{
+      transactions: { hash: Hex; from: Address; to: Address | null; nonce: number }[];
+    }>;
+    getTransactionReceipt: (args: { hash: Hex }) => Promise<{ status: string; contractAddress: Address | null; blockNumber: bigint } | null>;
     call: (args: { account: Address; data: Hex }) => Promise<unknown>;
     readContract: (args: { address: Address; abi: Abi; functionName: string; args?: unknown[] }) => Promise<unknown>;
     waitForTransactionReceipt: (args: {
@@ -104,6 +109,7 @@ export async function deploy(ctx: DeployCtx) {
   // Recovery: a previous run already reserved a nonce. Decide from the chain, never redeploy with another nonce.
   if (state.deployNonce !== undefined) {
     const expected = state.expectedFactory ?? (getContractAddress({ from: agent, nonce: BigInt(state.deployNonce) }) as Address);
+    state.expectedFactory ??= expected;
     if (state.bytecodeHash) assert.equal(bytecodeHash, state.bytecodeHash, "el bytecode del artifact cambió desde el deploy guardado: revisar a mano");
     const code = (await reader.getCode({ address: expected })) ?? "0x";
 
@@ -115,10 +121,23 @@ export async function deploy(ctx: DeployCtx) {
         return;
       }
       assert.ok(runtimeMatches(code, artifact), `el contrato en ${expected} no es el TildaiFactory de este build: revisar a mano`);
-      await checkFactory(expected);
-      state.factory = expected;
-      save();
-      console.log(`✓ TildaiFactory recuperada en mainnet: ${expected}`);
+      // Recorded only with the creating tx's tag verified: a factory without the tag is not ours.
+      const hash = state.factoryTx ?? (await findDeployHash(expected));
+      const receipt = await reader.getTransactionReceipt({ hash });
+      assert.ok(receipt, `no encontré el recibo de ${hash}: no doy por buena una factory sin tag. Revisar a mano.`);
+      await recordFactory(hash, receipt);
+      console.log(`✓ TildaiFactory recuperada en mainnet: ${expected} (bloque ${state.factoryBlock}, tx ${hash})`);
+      return;
+    }
+
+    // A recorded hash beats a blind resend: wait for its receipt (the tx may just be pending).
+    if (state.factoryTx) {
+      console.log(`El deploy ${state.factoryTx} todavía no está en cadena: espero su recibo, no reenvío.`);
+      if (!confirmed) {
+        console.log('Dry run: no espero nada. Para retomarlo: $env:CONFIRM_MAINNET="1"; node scripts/deploy-mainnet.ts');
+        return;
+      }
+      await finish(state.factoryTx);
       return;
     }
 
@@ -181,6 +200,22 @@ export async function deploy(ctx: DeployCtx) {
     assert.equal(getAddress((await read("agent")) as Address), agent, "la factory desplegada no tiene a este agente");
   }
 
+  // Finds the tx that spent deployNonce: binary search the first block where the count passed it,
+  // then the create tx from this agent inside that block.
+  async function findDeployHash(expected: Address): Promise<Hex> {
+    let lo = 0n;
+    let hi = await reader.getBlockNumber();
+    while (lo < hi) {
+      const mid = (lo + hi) / 2n;
+      if ((await reader.getTransactionCount({ address: agent, blockNumber: mid })) > state.deployNonce!) hi = mid;
+      else lo = mid + 1n;
+    }
+    const { transactions } = await reader.getBlock({ blockNumber: lo, includeTransactions: true });
+    const tx = transactions.find((t) => t.nonce === state.deployNonce && t.to === null && getAddress(t.from) === agent);
+    assert.ok(tx, `hay contrato en ${expected} pero no encontré la tx que lo creó (nonce ${state.deployNonce}): no doy por buena una factory sin tag. Revisar a mano.`);
+    return tx.hash;
+  }
+
   async function finish(hash: Hex) {
     let receipt;
     try {
@@ -189,18 +224,22 @@ export async function deploy(ctx: DeployCtx) {
       console.error(`No apareció el recibo de ${hash}. Si la tx no está en el explorador, revisá celo.json y volvé a correr.`);
       throw e;
     }
+    await recordFactory(hash, receipt);
+    console.log(`✓ TildaiFactory en mainnet: ${state.factory} (bloque ${state.factoryBlock}, tx ${hash})`);
+  }
+
+  async function recordFactory(hash: Hex, receipt: { status: string; contractAddress: Address | null; blockNumber: bigint }) {
     assert.equal(receipt.status, "success", `deploy revertido ${hash}`);
     assert.ok(receipt.contractAddress, `la tx ${hash} no creó un contrato`);
     if (state.expectedFactory)
       assert.equal(getAddress(receipt.contractAddress), getAddress(state.expectedFactory), `la tx creó ${receipt.contractAddress}, no la esperada ${state.expectedFactory}`);
     const tag = await verifyTag(hash);
-    assert.ok(tag?.codes.includes(ATTRIBUTION_CODE), `la tx ${hash} no lleva el attribution tag`);
+    assert.ok(tag?.codes.includes(ATTRIBUTION_CODE), `la tx ${hash} no lleva el attribution tag: no doy por buena una factory sin tag`);
     const factory = receipt.contractAddress;
     await checkFactory(factory);
     state.factory = factory;
     state.factoryBlock = receipt.blockNumber.toString();
     save();
-    console.log(`✓ TildaiFactory en mainnet: ${factory} (bloque ${state.factoryBlock}, tx ${hash})`);
   }
 }
 
