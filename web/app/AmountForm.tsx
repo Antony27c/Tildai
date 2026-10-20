@@ -4,13 +4,18 @@ import { buildRipioLink, parseAmount } from "../lib/ripio.ts";
 import { payUrl } from "../lib/sale.ts";
 import { pollSale, type PollOutcome } from "../lib/poll.ts";
 import { checkWarsWallet, payWithWars } from "../lib/buyer.ts";
-import { choosePayOption, PESOS_NOTE, type PayOption } from "../lib/wars.ts";
+import { choosePayOption, PESOS_NOTE, X402_MIN, type PayOption } from "../lib/wars.ts";
+import { payStatus } from "./cobro/status.ts";
+import Tick from "./cobro/Tick.tsx";
+import styles from "./Cobro.module.css";
 
 declare global {
   interface Window {
     ethereum?: unknown;
   }
 }
+
+const fmt = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" });
 
 export default function AmountForm({ vault, fixed, sale }: { vault: string; fixed: number | null; sale: string | null }) {
   const [raw, setRaw] = useState(fixed ? String(fixed) : "");
@@ -21,6 +26,7 @@ export default function AmountForm({ vault, fixed, sale }: { vault: string; fixe
   const [err, setErr] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<PollOutcome | null>(null);
   const [pending, setPending] = useState(false);
+  const [settled, setSettled] = useState(false);
   useEffect(() => {
     checkWarsWallet(window.ethereum).then((c) => setOption(choosePayOption(c)));
   }, []);
@@ -56,54 +62,86 @@ export default function AmountForm({ vault, fixed, sale }: { vault: string; fixe
     setPaying(false);
     if (r.ok) {
       setPaid(true);
-      // sin sale no hay poll del indexer: el tilde sale del settle que ya confirmó el facilitador
+      // sin sale no hay poll del indexer: solo "Pago enviado" (la red confirmó), nunca "Cobrada"
       if (r.pending) setPending(true);
-      else if (!sale) setOutcome("cobrada");
+      else if (!sale) setSettled(true);
     }
     else setErr(r.reason);
   };
+  const status = payStatus({ paid, pending, settled, outcome });
+  const warsEnabled = option === "wars" && (!amount || amount >= X402_MIN);
   return (
-    <div style={{ display: "grid", gap: 12 }} data-pay-url={amount ? payUrl(vault, amount, sale) : undefined}>
-      {!fixed && (
-        <label style={{ display: "grid", gap: 4 }}>
-          ¿Cuánto vas a pagar?
-          <input
-            inputMode="decimal"
-            value={raw}
-            onChange={(e) => setRaw(e.target.value)}
-            placeholder="$ 0"
-            style={{ fontSize: 28, padding: 12, borderRadius: 8, border: "1px solid #ccc" }}
-          />
-        </label>
+    <section className={styles.card} data-pay-url={amount ? payUrl(vault, amount, sale) : undefined} aria-label="Cobro">
+      <div className={styles.amountWrap}>
+        {fixed ? (
+          <>
+            <span className={styles.amountLabel}>Total a pagar</span>
+            <strong className={styles.amount}>{fmt.format(fixed)}</strong>
+          </>
+        ) : (
+          <div className={styles.field}>
+            <label className={styles.label} htmlFor="monto">
+              ¿Cuánto vas a pagar?
+            </label>
+            <input
+              id="monto"
+              className={styles.input}
+              inputMode="decimal"
+              autoComplete="off"
+              value={raw}
+              onChange={(e) => setRaw(e.target.value)}
+              placeholder="$ 0"
+              aria-describedby="monto-hint"
+            />
+            <p className={styles.hint} id="monto-hint">
+              En pesos. Podés escribir 8.500 o 8500,50.
+            </p>
+          </div>
+        )}
+        {!fixed && amount && <strong className={styles.amount}>{fmt.format(amount)}</strong>}
+      </div>
+      {!paid && (
+        <div className={styles.actions}>
+          {option === null && <p className={styles.muted}>Viendo si tenés wallet…</p>}
+          {warsEnabled && (
+            <button className={`${styles.btn} ${styles.primary}`} disabled={!amount || paying} onClick={payWars}>
+              {paying ? "Esperando tu firma…" : "Pagar con wARS"}
+            </button>
+          )}
+          <button
+            className={`${styles.btn} ${warsEnabled ? styles.secondary : styles.primary}`}
+            disabled={!amount || paying}
+            onClick={payPesos}
+          >
+            Pagar con pesos
+          </button>
+          {option === "wars" && amount !== null && amount < X402_MIN && (
+            <p className={styles.hint}>Con wARS el mínimo es $ {X402_MIN}; con pesos no hay mínimo.</p>
+          )}
+          {option === "pesos" && <p className={styles.hint}>{PESOS_NOTE}</p>}
+        </div>
       )}
-      {amount && (
-        <strong style={{ fontSize: 32 }}>
-          {amount.toLocaleString("es-AR", { style: "currency", currency: "ARS" })}
-        </strong>
-      )}
-      {option === "wars" && !paid && (
-        <button
-          disabled={!amount || paying}
-          onClick={payWars}
-          style={{ fontSize: 20, padding: 16, borderRadius: 12, border: 0, background: amount ? "#111" : "#aaa", color: "#fff" }}
-        >
-          {paying ? "Firmando…" : "Pagar con wARS"}
-        </button>
-      )}
-      <button
-        disabled={!amount}
-        onClick={payPesos}
-        style={{ fontSize: 20, padding: 16, borderRadius: 12, border: 0, background: amount ? "#0a7d3b" : "#aaa", color: "#fff" }}
-      >
-        Pagar con pesos
-      </button>
-      {option === "pesos" && <p style={{ margin: 0, fontSize: 14, color: "#555" }}>{PESOS_NOTE}</p>}
-      {err && <p role="alert">{err}</p>}
-      {paid && (
-        <p role="status">
-          {pending ? "Estamos confirmando tu pago, no vuelvas a pagar." : outcome === "cobrada" ? "✓ Pago confirmado" : outcome === "timeout" ? "Seguimos confirmando; el comercio te avisa." : "Pago enviado, confirmando…"}
+      {err && (
+        <p className={styles.status} data-tone="danger" role="alert">
+          {err}
         </p>
       )}
-    </div>
+      <div role="status" aria-live="polite">
+        {status && (
+          <div className={styles.status} data-tone={status.tone}>
+            <strong className={styles.statusTitle}>
+              {status.tick && <Tick className={styles.tickOk} />}
+              {status.title}
+            </strong>
+            {status.body && <span className={styles.statusBody}>{status.body}</span>}
+            {status.retry && (
+              <button className={`${styles.btn} ${styles.secondary} ${styles.btnSmall}`} onClick={() => window.location.reload()}>
+                Revisar de nuevo
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </section>
   );
 }

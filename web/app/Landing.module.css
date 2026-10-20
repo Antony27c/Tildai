@@ -1,0 +1,580 @@
+/* Tildai landing — el ticket de caja es el motivo: papel, tinta, tilde verde. */
+
+.page {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.wrap {
+  max-width: 1060px;
+  margin-inline: auto;
+  padding-inline: var(--s4);
+}
+
+@media (min-width: 720px) {
+  .wrap {
+    padding-inline: var(--s5);
+  }
+}
+
+/* Barra */
+
+.bar {
+  padding-block: var(--s3);
+}
+
+.bar > .wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s4);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--s1);
+  font-size: 1.3rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--fg);
+  text-decoration: none;
+}
+
+.brandTick {
+  width: 0.62em;
+  height: 0.62em;
+  color: var(--accent);
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: var(--s5);
+}
+
+.nav a {
+  color: var(--fg);
+  text-decoration: none;
+  font-size: 0.95rem;
+}
+
+.nav a:not(.ctaSmall):hover {
+  text-decoration: underline;
+  text-underline-offset: 0.25em;
+}
+
+/* Botones: píldora, una sola forma en toda la página */
+
+.cta,
+.ctaSmall {
+  display: inline-block;
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-radius: 999px;
+  font-weight: 700;
+  text-decoration: none;
+  transition: transform 120ms ease-out, background-color 120ms ease-out;
+}
+
+.cta {
+  padding: var(--s3) var(--s5);
+  font-size: 1.05rem;
+}
+
+.ctaSmall {
+  padding: var(--s2) var(--s4);
+  font-size: 0.95rem;
+}
+
+.cta:hover,
+.ctaSmall:hover {
+  background: #0a6531;
+  transform: translateY(-1px);
+}
+
+.cta:active,
+.ctaSmall:active {
+  transform: translateY(0) scale(0.98);
+}
+
+/* Hero */
+
+.hero {
+  display: grid;
+  gap: var(--s6);
+  padding-top: var(--s5);
+  padding-bottom: var(--s6);
+  align-items: center;
+}
+
+@media (min-width: 900px) {
+  .hero {
+    grid-template-columns: 1.1fr 0.9fr;
+    gap: calc(var(--s6) + var(--s5));
+    padding-top: var(--s6);
+    padding-bottom: calc(var(--s6) * 2);
+  }
+}
+
+.title {
+  margin: 0;
+  font-size: clamp(2.6rem, 9vw, 4.4rem);
+  line-height: 0.98;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+}
+
+.lede {
+  margin: var(--s4) 0 0;
+  font-size: clamp(1.15rem, 2.6vw, 1.3rem);
+  line-height: 1.45;
+  max-width: 32ch;
+}
+
+.heroActions {
+  margin: var(--s5) 0 0;
+}
+
+.note {
+  margin: var(--s4) 0 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+  max-width: 36ch;
+}
+
+/* Entrada del hero y reveal de secciones */
+@media (prefers-reduced-motion: no-preference) {
+  .title,
+  .lede,
+  .heroActions,
+  .note,
+  .ticketCol {
+    animation: rise 500ms cubic-bezier(0.2, 0.7, 0.3, 1) backwards;
+  }
+
+  .lede { animation-delay: 70ms; }
+  .heroActions { animation-delay: 140ms; }
+  .note { animation-delay: 180ms; }
+  .ticketCol { animation-delay: 220ms; }
+
+  .in {
+    animation: rise 520ms cubic-bezier(0.2, 0.7, 0.3, 1) var(--d, 0ms) backwards;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+}
+
+/* El ticket: papel con bordes rasgados */
+
+.ticketCol {
+  justify-self: center;
+  width: min(100%, 380px);
+}
+
+@media (min-width: 900px) {
+  .ticketCol {
+    justify-self: stretch;
+    width: 100%;
+  }
+}
+
+.ticket {
+  display: flex;
+  flex-direction: column;
+}
+
+.torn {
+  display: block;
+  width: 100%;
+  height: 9px;
+  fill: var(--surface);
+}
+
+.ticketBody {
+  background: var(--surface);
+  margin-block: -1px; /* evita una línea de unión con los bordes rasgados */
+  padding: var(--s4) var(--s3);
+}
+
+.ticketHead {
+  margin: 0 0 var(--s3);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  font-size: 1.05rem;
+}
+
+.ticketList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--s2);
+}
+
+.line {
+  display: grid;
+  grid-template-columns: 1fr auto 1em;
+  align-items: baseline;
+  gap: var(--s3);
+}
+
+.amount {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  font-size: 0.95em;
+}
+
+.lineTick {
+  width: 0.85em;
+  height: 0.85em;
+  color: var(--ok);
+  place-self: center;
+}
+
+/* La línea nueva entra subiendo y la tilde se dibuja */
+@media (prefers-reduced-motion: no-preference) {
+  .line:last-child {
+    animation: lineIn 320ms ease-out backwards;
+  }
+
+  .line:last-child .lineTick path {
+    stroke-dasharray: 1;
+    animation: draw 350ms ease-out 120ms backwards;
+  }
+}
+
+@keyframes lineIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+@keyframes draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
+
+.ticketTotal {
+  margin: var(--s3) 0 0;
+  padding-top: var(--s3);
+  border-top: 2px dashed var(--border); /* taste-skill-ignore: la línea de corte del ticket es parte del motivo */
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--s3);
+  font-weight: 800;
+}
+
+.simulate {
+  display: block;
+  margin: var(--s4) auto 0;
+  padding: var(--s3) var(--s5);
+  border: 0;
+  border-radius: 999px;
+  background: var(--fg);
+  color: var(--surface);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 120ms ease-out, opacity 120ms ease-out;
+}
+
+.simulate:hover {
+  opacity: 0.88;
+  transform: translateY(-1px);
+}
+
+.simulate:active {
+  transform: translateY(0) scale(0.98);
+}
+
+/* Burbuja de aviso estilo chat */
+
+.bubble {
+  margin-top: var(--s4);
+  background: var(--surface);
+  border-radius: var(--radius);
+  border-bottom-left-radius: 2px;
+  padding: var(--s3) var(--s4);
+  max-width: 320px;
+}
+
+.bubbleLabel {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.bubbleMsg {
+  margin: var(--s1) 0 0;
+  font-weight: 700;
+}
+
+.bubbleTick {
+  width: 0.9em;
+  height: 0.9em;
+  color: var(--ok);
+  vertical-align: -0.08em;
+}
+
+.caption {
+  margin: var(--s2) 0 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+/* Secciones */
+
+.section {
+  padding-block: var(--s6);
+}
+
+@media (min-width: 900px) {
+  .section {
+    padding-block: calc(var(--s6) * 2);
+  }
+}
+
+.heading {
+  margin: 0;
+  font-size: clamp(1.75rem, 5vw, 2.5rem);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+.howGrid,
+.split {
+  display: grid;
+  gap: var(--s5);
+  align-items: start;
+  margin-top: var(--s5);
+}
+
+.split {
+  margin-top: 0;
+}
+
+@media (min-width: 900px) {
+  .howGrid {
+    grid-template-columns: 1.1fr 0.9fr;
+    gap: var(--s6);
+  }
+
+  .howGrid .photo {
+    order: 2;
+  }
+
+  .split {
+    grid-template-columns: 0.9fr 1.1fr;
+    gap: var(--s6);
+  }
+
+  .split .facts {
+    margin-top: var(--s4);
+  }
+}
+
+.photo {
+  margin: 0;
+}
+
+.photo img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.photo .caption {
+  text-align: left;
+}
+
+/* Banda de foto a todo lo ancho: el barrio */
+
+.band {
+  margin: 0;
+  overflow: clip;
+}
+
+.band img {
+  display: block;
+  width: 100%;
+  height: clamp(260px, 46vw, 460px);
+  object-fit: cover;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .band img {
+    animation: drift 28s ease-in-out infinite alternate;
+  }
+}
+
+@keyframes drift {
+  from {
+    transform: scale(1.02);
+  }
+  to {
+    transform: scale(1.09) translateY(-1.5%);
+  }
+}
+
+.bandCaption {
+  margin-top: var(--s2);
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.steps,
+.facts {
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s5);
+}
+
+.steps li,
+.facts li {
+  font-size: 1.05rem;
+  line-height: 1.5;
+  max-width: 46ch;
+}
+
+.steps {
+  padding-left: 1.4em;
+}
+
+.steps li::marker {
+  font-weight: 800;
+  color: var(--accent);
+}
+
+.facts {
+  list-style: none;
+}
+
+.facts strong,
+.steps strong {
+  display: block;
+  font-size: 1.15rem;
+  margin-bottom: var(--s1);
+}
+
+/* Bloque de confianza: el único campo de color pleno de la página */
+
+.trust {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+.trustInner {
+  padding-block: var(--s6);
+  display: grid;
+  gap: var(--s5);
+  align-items: start;
+}
+
+@media (min-width: 720px) {
+  .trustInner {
+    padding-block: calc(var(--s6) * 2);
+    grid-template-columns: 0.9fr 1.1fr;
+    gap: var(--s6);
+  }
+
+  .trustNote {
+    grid-column: 2;
+  }
+}
+
+.trustList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--s4);
+}
+
+.trustList li {
+  display: grid;
+  grid-template-columns: 1.2em 1fr;
+  gap: var(--s3);
+  align-items: start;
+  font-size: 1.05rem;
+  line-height: 1.5;
+  max-width: 44ch;
+}
+
+.trustTick {
+  width: 1.1em;
+  height: 1.1em;
+  margin-top: 0.2em;
+}
+
+.trustNote {
+  margin: 0;
+  font-size: 0.9rem;
+  opacity: 0.85;
+  max-width: 52ch;
+}
+
+/* CTA final: el único momento centrado */
+
+.final {
+  text-align: center;
+}
+
+.final .heading,
+.finalText {
+  margin-inline: auto;
+}
+
+.finalText {
+  margin-top: var(--s4);
+  font-size: 1.1rem;
+  max-width: 40ch;
+}
+
+/* Footer */
+
+.footer {
+  margin-top: auto;
+  padding-block: var(--s5);
+  background: var(--surface);
+}
+
+.footerBrand {
+  margin: 0;
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--s1);
+  font-weight: 800;
+  font-size: 1.1rem;
+  letter-spacing: -0.02em;
+}
+
+.footerText {
+  margin: var(--s2) 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  max-width: 52ch;
+}
+
+.footerCredits {
+  margin: var(--s3) 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  max-width: 60ch;
+}
+
+.footerCredits a {
+  color: inherit;
+  text-underline-offset: 0.2em;
+}

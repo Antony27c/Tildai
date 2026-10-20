@@ -1,0 +1,61 @@
+/* Tildai — sistema visual. Tokens y base para toda la web.
+   Reglas de uso en web/DESIGN.md. */
+
+:root {
+  /* Color: piedra con tinte verdoso, tinta, verde tilde */
+  --bg: #f3f4f1;
+  --surface: #fafbf9;
+  --fg: #201c14;
+  --muted: #5f6158;
+  --border: #e0e2dc;
+  --accent: #0e7a3d;
+  --accent-fg: #ffffff;
+  --ok: #0e7a3d;
+  --warn: #a35c00;
+  --danger: #b3261e;
+
+  --radius: 8px;
+
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, "Liberation Mono", Menlo, monospace; /* taste-skill-ignore: token requerido; solo para datos y medición (ver DESIGN.md) */
+
+  /* Espaciado */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+  --s6: 48px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: 17px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
