@@ -240,7 +240,7 @@ test("pagos sin fecha (bloque podado): el cierre avisa que no entraron en el tot
     timestamp,
     ...(unavailable && { timestampUnavailable: true as const }),
   });
-  const todos = [pay("ok", 1000n, NOW - 60_000), pay("podado", 500n, null, true)];
+  const todos = [pay("ok", 1000n, NOW - 60_000), pay("podado", 500n, null, true), pay("podado2", 300n, null, true)];
   // Como el server real: con rango quedan afuera los sin timestamp; sin rango vienen todos.
   const indexer: Indexer = {
     eventosDesde: async () => ({ events: [], cursor: 0 }),
@@ -263,7 +263,8 @@ test("pagos sin fecha (bloque podado): el cierre avisa que no entraron en el tot
   }
   assert.equal(sent.length, 1);
   assert.match(sent[0].texto, /Cierre de caja/);
-  assert.match(sent[0].texto, /un pago sin fecha.*no entró en el total de hoy/);
+  // El conteo es de TODO el historial (los podados no tienen fecha): el aviso no dice "de hoy".
+  assert.match(sent[0].texto, /2 pagos sin fecha en el historial.*no entran en ningún total/);
   assert.equal(c.writes.length, 2); // el día se verificó: se aparta igual, solo que se avisa lo que quedó afuera
 });
 
