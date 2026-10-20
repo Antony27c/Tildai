@@ -119,9 +119,9 @@ export default async function PanelPage({ searchParams }: { searchParams: Promis
                   {p.timestamp === null ? "--:--" : dia === "7d" ? formatDiaHoraAR(p.timestamp) : formatHoraAR(p.timestamp)}
                 </span>
                 <span className={styles.amount}>$ {formatPesos(p.amount)}</span>
-                <a className={styles.link} href={`https://celoscan.io/tx/${p.txHash}`} target="_blank" rel="noreferrer">
-                  ver tx
-                </a>
+                <Link className={styles.link} href={`/comprobante?tx=${p.txHash}`}>
+                  ver comprobante
+                </Link>
               </li>
             ))}
           </ul>
