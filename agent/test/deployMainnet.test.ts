@@ -54,6 +54,7 @@ function fakeReader(
     receipts?: Record<string, Receipt>;
     receipt?: Receipt;
     receiptError?: Error;
+    historyError?: Error;
   } = {},
 ) {
   const tokens = new Set([WARS, USDT, ...TEXTILE].map((a) => getAddress(a)));
@@ -61,8 +62,13 @@ function fakeReader(
   return {
     getChainId: async () => 42220,
     getCode: async ({ address }: { address: Address }) => opts.codeAt?.[getAddress(address)] ?? (tokens.has(getAddress(address)) ? "0x6001" : "0x"),
-    getTransactionCount: async ({ blockTag, blockNumber }: { blockTag?: "latest" | "pending"; blockNumber?: bigint }) =>
-      blockNumber !== undefined ? (opts.nonceCountAt?.(blockNumber) ?? 0) : blockTag === "pending" ? (opts.counts?.pending ?? 0) : (opts.counts?.latest ?? 0),
+    getTransactionCount: async ({ blockTag, blockNumber }: { blockTag?: "latest" | "pending"; blockNumber?: bigint }) => {
+      if (blockNumber !== undefined) {
+        if (opts.historyError) throw opts.historyError;
+        return opts.nonceCountAt?.(blockNumber) ?? 0;
+      }
+      return blockTag === "pending" ? (opts.counts?.pending ?? 0) : (opts.counts?.latest ?? 0);
+    },
     getBlockNumber: async () => opts.blockNumber ?? 100n,
     getBlock: async ({ blockNumber }: { blockNumber: bigint }) => ({ transactions: opts.txsAt?.[blockNumber.toString()] ?? [] }),
     getTransactionReceipt: async ({ hash }: { hash: Hex }) => opts.receipts?.[hash] ?? null,
@@ -191,13 +197,34 @@ test("con factoryTx guardado y sin código espera su recibo, no reenvía", async
 test("si el recibo de factoryTx no aparece, corta con aviso y no reenvía", async () => {
   const expected = getContractAddress({ from: AGENT, nonce: 3n });
   const wallet = fakeWallet();
+  const errors: string[] = [];
+  const origError = console.error;
+  console.error = (m: unknown) => errors.push(String(m));
   const { ctx: c } = ctx({
     wallet,
     state: { deployNonce: 3, expectedFactory: expected, factoryTx: HASH, bytecodeHash: keccak256(ARTIFACT.bytecode) },
     reader: fakeReader({ receiptError: new Error("Timed out while waiting for transaction") }),
   });
-  await assert.rejects(deploy(c), /Timed out/);
+  try {
+    await assert.rejects(deploy(c), /Timed out/);
+  } finally {
+    console.error = origError;
+  }
   assert.equal(wallet.sent.length, 0);
+  assert.equal(c.state.factory, undefined);
+  assert.match(errors.join("\n"), /borrá factoryTx de celo\.json.*mismo nonce/i);
+});
+
+test("si el RPC no sirve estado histórico, sugiere completar factoryTx a mano", async () => {
+  const expected = getContractAddress({ from: AGENT, nonce: 3n });
+  const { ctx: c } = ctx({
+    state: { deployNonce: 3, expectedFactory: expected, bytecodeHash: keccak256(ARTIFACT.bytecode) },
+    reader: fakeReader({
+      codeAt: { [getAddress(expected)]: ONCHAIN_RUNTIME },
+      historyError: new Error("block is more than 10064 blocks behind head"),
+    }),
+  });
+  await assert.rejects(deploy(c), /factoryTx a mano en celo\.json/i);
   assert.equal(c.state.factory, undefined);
 });
 
