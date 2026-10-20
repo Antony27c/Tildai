@@ -6,9 +6,10 @@ import { test } from "node:test";
 
 import { pad, toEventSelector, type Address, type Hex } from "viem";
 
-import { ChatVaultRegistry, CreadorVault, MAX_RATE, MAX_SWAP } from "../src/alta.ts";
+import { ChatVaultRegistry, chatHabilitado, CreadorVault, MAX_RATE, MAX_SWAP, type ChatEntry } from "../src/alta.ts";
 import { factoryAbi } from "../src/chainVault.ts";
 import { pesosToWei } from "../src/money.ts";
+import { dayIndex } from "../src/sales.ts";
 import { looksLikeSecret } from "../src/secrets.ts";
 
 const OWNER = "0x1111111111111111111111111111111111111111" as Address;
@@ -17,7 +18,27 @@ const FACTORY = "0x3333333333333333333333333333333333333333" as Address;
 const ADAPTER = "0x0e2a3e05bc9a16f5292a6170456a710cb89c6f72" as Address;
 const KEY = "0x" + "a".repeat(64);
 
-function setup(o: { simulateError?: string; waitError?: string; receipt?: string; txReceipt?: { status: string }; vaultOnchain?: Address; file?: string } = {}) {
+function setup(
+  o: {
+    simulateError?: string;
+    slowSimulate?: boolean;
+    writeError?: string;
+    waitError?: string;
+    receipt?: string;
+    txReceipt?: { status: string; logs?: any[] };
+    vaultOnchain?: Address;
+    vaultLogBlock?: bigint;
+    file?: string;
+    maxAltas?: number;
+    pendienteMin?: number;
+    maxRate?: bigint;
+    now?: () => number;
+    tx?: { nonce?: number; blockNumber?: bigint | null } | null | "notfound";
+    txError?: string;
+    txCount?: number;
+    walletAddress?: Address;
+  } = {},
+) {
   const calls: string[] = [];
   const writes: any[] = [];
   const registry = ChatVaultRegistry.load(o.file);
@@ -27,6 +48,7 @@ function setup(o: { simulateError?: string; waitError?: string; receipt?: string
     },
     async simulateContract(a: any) {
       calls.push("simulate");
+      if (o.slowSimulate) await new Promise((r) => setTimeout(r, 5));
       if (o.simulateError) throw Object.assign(new Error("x"), { shortMessage: o.simulateError });
       return { request: { ...a } };
     },
@@ -34,8 +56,8 @@ function setup(o: { simulateError?: string; waitError?: string; receipt?: string
     async waitForTransactionReceipt({ hash }: any) {
       calls.push("wait");
       if (o.waitError) throw new Error(o.waitError);
-      const logs = [{ address: FACTORY, topics: [toEventSelector("VaultCreated(address indexed vault, address indexed owner)"), pad(VAULT), pad(OWNER)], data: "0x" }];
-      return { status: o.receipt ?? "success", logs, transactionHash: hash };
+      const logs = [{ address: FACTORY, topics: [toEventSelector("VaultCreated(address indexed vault, address indexed owner)"), pad(VAULT), pad(OWNER)], data: "0x", blockNumber: 777n }];
+      return { status: o.receipt ?? "success", logs, transactionHash: hash, blockNumber: 777n };
     },
     async getBlockNumber() {
       calls.push("getBlockNumber");
@@ -43,25 +65,36 @@ function setup(o: { simulateError?: string; waitError?: string; receipt?: string
     },
     async getLogs({ args }: any) {
       calls.push("getLogs");
-      return o.vaultOnchain && args.owner === OWNER ? [{ args: { vault: o.vaultOnchain, owner: OWNER } }] : [];
+      return o.vaultOnchain && args.owner === OWNER ? [{ args: { vault: o.vaultOnchain, owner: OWNER }, blockNumber: o.vaultLogBlock ?? 55n }] : [];
     },
     async getTransactionReceipt() {
       calls.push("getTxReceipt");
       return o.txReceipt ?? null; // null = aún no minada
+    },
+    async getTransaction() {
+      calls.push("getTx");
+      if (o.txError) throw new Error(o.txError);
+      if (o.tx === "notfound") throw Object.assign(new Error("x"), { name: "TransactionNotFoundError" });
+      return o.tx ?? null;
+    },
+    async getTransactionCount() {
+      calls.push("txCount");
+      return o.txCount ?? 0;
     },
     async getBlock() {
       return { timestamp: 0n };
     },
   };
   const wallet = {
-    account: { address: "0x1" as Address },
+    account: { address: o.walletAddress ?? ("0x1" as Address) },
     async writeContract(req: any) {
       calls.push("write");
       writes.push(req);
+      if (o.writeError) throw Object.assign(new Error(o.writeError), { shortMessage: o.writeError });
       return "0xfeed" as Hex;
     },
   };
-  const creador = new CreadorVault({ registry, factory: FACTORY, fromBlock: 0n, reader, wallet, feeCurrency: ADAPTER, payBaseUrl: "https://pay.test" });
+  const creador = new CreadorVault({ registry, factory: FACTORY, fromBlock: 0n, reader, wallet, feeCurrency: ADAPTER, payBaseUrl: "https://pay.test", maxAltasDia: o.maxAltas, pendienteMin: o.pendienteMin, maxRate: o.maxRate, now: o.now });
   return { creador, registry, calls, writes };
 }
 
@@ -84,7 +117,7 @@ test("alta feliz: vault del evento del recibo, resumen con link y límites, feeC
   assert.match(r.resumen, /https:\/\/pay\.test\/\?vault=0x2222/);
   assert.match(r.resumen, /tope diario \$100\.000/);
   assert.match(r.resumen, /\$1\.700 por USD₮/);
-  assert.deepEqual(c.calls, ["simulate", "write", "wait"]);
+  assert.deepEqual(c.calls, ["simulate", "write", "getTx", "wait"]);
   assert.deepEqual(c.writes[0].args, [OWNER, OWNER, pesosToWei(100_000), MAX_RATE, MAX_SWAP]);
   assert.equal(c.writes[0].functionName, "createVault");
   assert.equal(c.writes[0].feeCurrency, ADAPTER);
@@ -224,4 +257,230 @@ test("dos direcciones pegadas no disparan la alarma de secreto", () => {
   assert.equal(looksLikeSecret(`mirá esto ${hex} y nada más`), true);
   assert.equal(looksLikeSecret(`${hex}${"b".repeat(64)}`), false); // 128 hex: no es una clave aislada
   assert.equal(looksLikeSecret(`0x${"1".repeat(40)}0x${"2".repeat(40)}`), false);
+});
+
+test("chatHabilitado: allowlist, open signup y chats ya registrados", () => {
+  const vacio = ChatVaultRegistry.load(undefined);
+  const env = { TILDAI_ALLOWED_CHATS: "", TILDAI_OWNER_CHAT_ID: "7" };
+  assert.equal(chatHabilitado("1", vacio, env), false); // vacía = nadie nuevo
+  assert.equal(chatHabilitado("7", vacio, env), true); // owner siempre
+  assert.equal(chatHabilitado("1", vacio, { ...env, TILDAI_OPEN_SIGNUP: "1" }), true);
+  assert.equal(chatHabilitado("1", vacio, { TILDAI_ALLOWED_CHATS: "1, 2,3" }), true);
+  assert.equal(chatHabilitado("4", vacio, { TILDAI_ALLOWED_CHATS: "1, 2,3" }), false);
+  assert.equal(chatHabilitado("", vacio, { TILDAI_OPEN_SIGNUP: "1" }), false);
+  // Un chat con vault o alta en curso sigue entrando aunque no esté en la lista.
+  const reg = { get: (id: string) => (id === "9" ? ({ estado: "enviada" } as ChatEntry) : undefined) };
+  assert.equal(chatHabilitado("9", reg, env), true);
+  assert.equal(chatHabilitado("10", reg, env), false);
+});
+
+test("tope diario de altas: frena al que pasa y sobrevive a un reinicio", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "tildai-"));
+  const file = join(dir, "chats.json");
+  const c = setup({ file, maxAltas: 5 });
+  for (const id of ["a", "b", "c", "d", "e"]) {
+    assert.equal((await c.creador.crear(id, OWNER, pesosToWei(50_000))).estado, "creado");
+  }
+  const r = await c.creador.crear("f", OWNER, pesosToWei(50_000));
+  assert.equal(r.estado, "error");
+  assert.match(r.mensaje, /máximo de comercios.*mañana/);
+  assert.equal(c.calls.filter((x) => x === "write").length, 5);
+  assert.equal(c.registry.get("f"), undefined); // el rechazo no deja nada creado
+
+  // Reinicio simulado: el contador vuelve del archivo y sigue frenando.
+  const c2 = setup({ file, maxAltas: 5 });
+  const r2 = await c2.creador.crear("f", OWNER, pesosToWei(50_000));
+  assert.equal(r2.estado, "error");
+  assert.equal(c2.calls.includes("write"), false);
+  rmSync(dir, { recursive: true });
+});
+
+test("el contador de altas es por día argentino: otro día vuelve a 0", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "tildai-"));
+  const file = join(dir, "chats.json");
+  writeFileSync(file, JSON.stringify({ version: 1, altas: { dia: dayIndex(Date.now()) - 1, count: 99 }, chats: {} }));
+  const c = setup({ file, maxAltas: 5 });
+  assert.equal(c.registry.altasDelDia(), 0);
+  assert.equal((await c.creador.crear("x", OWNER, pesosToWei(50_000))).estado, "creado");
+  assert.equal(c.registry.altasDelDia(), 1);
+  rmSync(dir, { recursive: true });
+});
+
+test("el tope de altas no frena recuperar una tx ya enviada", async () => {
+  const c = setup({ waitError: "timeout" });
+  await c.creador.crear("50", OWNER, pesosToWei(50_000)); // queda txHash sin vault
+  const logs = [{ address: FACTORY, topics: [toEventSelector("VaultCreated(address indexed vault, address indexed owner)"), pad(VAULT), pad(OWNER)], data: "0x" }];
+  const c2 = setup({ maxAltas: 0, txReceipt: { status: "success", logs } });
+  (c.registry as any).map.forEach((v: any, k: string) => (c2.registry as any).map.set(k, v));
+  const r = await c2.creador.crear("50", OWNER, pesosToWei(50_000));
+  assert.equal(r.estado, "ya_existente");
+  assert.equal(r.vault, VAULT);
+  assert.equal(c2.calls.includes("write"), false);
+});
+
+// Past TILDAI_ALTA_PENDIENTE_MIN an unmined tx gets inspected before we ever send another createVault.
+async function seedPendiente(over: { tx?: "notfound" | { nonce?: number; blockNumber?: bigint | null } | null; txCount?: number; txError?: string; vaultOnchain?: Address; vaultLogBlock?: bigint; nonce?: number; sinHash?: boolean }) {
+  const dir = mkdtempSync(join(tmpdir(), "tildai-"));
+  const file = join(dir, "chats.json");
+  const seed = ChatVaultRegistry.load(file);
+  const base = { estado: "enviada" as const, owner: OWNER, dailyCap: "1", at: Date.now() - 60 * 60_000 };
+  await seed.set("60", over.sinHash ? base : { ...base, txHash: "0xdead" as Hex, nonce: over.nonce });
+  return { dir, file, c: setup({ file, ...over }) };
+}
+
+test("tx vieja descartada (nonce consumido aunque el nodo no la conozca): alta fallida y se puede reintentar", async () => {
+  const { dir, file, c } = await seedPendiente({ tx: "notfound", nonce: 7, txCount: 8 });
+  const r = await c.creador.crear("60", OWNER, pesosToWei(50_000));
+  assert.equal(r.estado, "error");
+  assert.match(r.mensaje, /descartada.*Probá \/start de nuevo/);
+  assert.equal(c.calls.includes("write"), false);
+  assert.equal(c.registry.get("60")?.txHash, undefined);
+  assert.equal(c.registry.get("60")?.estado, "error");
+  // El reintento crea normal (persistido: lo ve otro proceso que lee el archivo).
+  const c2 = setup({ file });
+  assert.equal((await c2.creador.crear("60", OWNER, pesosToWei(50_000))).estado, "creado");
+  rmSync(dir, { recursive: true });
+});
+
+test("tx vieja descartada pero el vault igual existe onchain: se registra con su fromBlock", async () => {
+  const { dir, c } = await seedPendiente({ tx: "notfound", nonce: 7, txCount: 8, vaultOnchain: VAULT, vaultLogBlock: 55n });
+  const r = await c.creador.crear("60", OWNER, pesosToWei(50_000));
+  assert.equal(r.estado, "ya_existente");
+  assert.equal(r.vault, VAULT);
+  assert.equal(c.calls.includes("write"), false);
+  assert.equal(c.registry.get("60")?.fromBlock, "55"); // nunca leer desde el bloque 0
+  rmSync(dir, { recursive: true });
+});
+
+test("tx 'no encontrada' sin nonce guardado no es prueba de descarte: sigue pendiente", async () => {
+  const { dir, c } = await seedPendiente({ tx: "notfound", txCount: 0 });
+  const r = await c.creador.crear("60", OWNER, pesosToWei(50_000));
+  assert.equal(r.estado, "pendiente"); // forno balancea nodos: un nodo puede no ver la tx con el nonce libre
+  assert.equal(c.calls.includes("write"), false);
+  rmSync(dir, { recursive: true });
+});
+
+test("nonce ya usado por otra tx confirmada: la vieja no puede minar, alta fallida", async () => {
+  const { dir, c } = await seedPendiente({ tx: { nonce: 7, blockNumber: null }, txCount: 8 });
+  const r = await c.creador.crear("60", OWNER, pesosToWei(50_000));
+  assert.equal(r.estado, "error");
+  assert.match(r.mensaje, /descartada/);
+  assert.equal(c.calls.includes("write"), false);
+  rmSync(dir, { recursive: true });
+});
+
+test("tx vieja todavía en mempool (nonce sin usar): sigue pendiente", async () => {
+  const { dir, c } = await seedPendiente({ tx: { nonce: 7, blockNumber: null }, txCount: 7 });
+  const r = await c.creador.crear("60", OWNER, pesosToWei(50_000));
+  assert.equal(r.estado, "pendiente");
+  assert.equal(c.calls.includes("write"), false);
+  rmSync(dir, { recursive: true });
+});
+
+test("duda al inspeccionar la tx vieja (RPC caído): error y jamás otra tx", async () => {
+  const { dir, c } = await seedPendiente({ txError: "rpc down" });
+  const r = await c.creador.crear("60", OWNER, pesosToWei(50_000));
+  assert.equal(r.estado, "error");
+  assert.match(r.mensaje, /no te voy a crear dos/);
+  assert.equal(c.calls.includes("write"), false);
+  assert.equal(c.registry.get("60")?.txHash, "0xdead"); // se conserva para el próximo intento
+  rmSync(dir, { recursive: true });
+});
+
+test("tx sin recibo pero dentro del timeout: pendiente sin inspeccionar la mempool", async () => {
+  const c = setup();
+  await c.registry.set("64", { estado: "enviada", owner: OWNER, dailyCap: "1", at: Date.now(), txHash: "0xdead" as Hex });
+  const r = await c.creador.crear("64", OWNER, pesosToWei(50_000));
+  assert.equal(r.estado, "pendiente");
+  assert.equal(c.calls.includes("getTx"), false); // dentro del timeout ni se mira la mempool
+});
+
+test("entrada 'error' con txHash re-evalúa la tx al instante (no espera otro timeout)", async () => {
+  const c = setup({ tx: { nonce: 7, blockNumber: null }, txCount: 7 });
+  await c.registry.set("65", { estado: "error", owner: OWNER, dailyCap: "1", at: Date.now(), txHash: "0xdead" as Hex, nonce: 7, error: "timeout esperando el recibo" });
+  const r = await c.creador.crear("65", OWNER, pesosToWei(50_000));
+  assert.equal(r.estado, "pendiente"); // nonce libre: la tx puede seguir viva en mempool
+  assert.equal(c.calls.includes("getTx"), true);
+  assert.equal(c.calls.includes("write"), false);
+});
+
+// ---- Tests de la revisión del tester (zz-tester-alta) y de los hallazgos de auditoría ----
+
+test("/start simultáneos de chats distintos no pasan el tope diario", async () => {
+  const c = setup({ maxAltas: 2, slowSimulate: true });
+  const rs = await Promise.all(["a", "b", "c", "d", "e"].map((id) => c.creador.crear(id, OWNER, pesosToWei(1000))));
+  assert.ok(c.calls.filter((x) => x === "write").length <= 2, `se mandaron ${c.calls.filter((x) => x === "write").length} createVault con tope 2`);
+  assert.equal(rs.filter((r) => r.estado === "creado").length, 2);
+});
+
+test("cupo devuelto si la simulación falla; conservado si writeContract pudo difundir", async () => {
+  const c = setup({ maxAltas: 1, simulateError: "out of gas" });
+  assert.equal((await c.creador.crear("s1", OWNER, pesosToWei(1000))).estado, "error");
+  assert.equal(c.registry.altasDelDia(), 0); // nada salió: cupo libre
+  const c2 = setup({ maxAltas: 1, writeError: "fetch failed (timeout)" });
+  assert.equal((await c2.creador.crear("s2", OWNER, pesosToWei(1000))).estado, "error");
+  assert.equal(c2.registry.altasDelDia(), 1); // la tx pudo difundirse: el cupo queda gastado
+  const r3 = await c2.creador.crear("s3", OWNER, pesosToWei(1000));
+  assert.match(r3.estado === "error" ? r3.mensaje : "", /máximo de comercios/);
+  assert.equal(c2.calls.filter((x) => x === "write").length, 1); // solo la primera
+});
+
+test("writeContract falla tras difundir: el reintento barre la factory y registra el vault sin otra tx", async () => {
+  const c = setup({ writeError: "fetch failed (timeout)" });
+  const r1 = await c.creador.crear("x", OWNER, pesosToWei(1000));
+  assert.equal(r1.estado, "error");
+  assert.equal(c.registry.get("x")?.txHash, undefined); // nunca supimos el hash
+  // La primera tx sí llegó al mempool y minó: el vault existe onchain.
+  const c2 = setup({ vaultOnchain: VAULT, vaultLogBlock: 55n });
+  (c.registry as any).map.forEach((v: any, k: string) => (c2.registry as any).map.set(k, v));
+  const r2 = await c2.creador.crear("x", OWNER, pesosToWei(1000));
+  assert.equal(r2.estado, "ya_existente");
+  assert.equal(r2.vault, VAULT);
+  assert.equal(c2.calls.includes("write"), false);
+  assert.equal(c2.registry.get("x")?.fromBlock, "55");
+});
+
+test("intento previo sin hash (crash entre write y registry.set): barre antes de enviar", async () => {
+  const c = setup({ vaultOnchain: VAULT, vaultLogBlock: 41n });
+  await c.registry.set("crash", { estado: "enviada", owner: OWNER, dailyCap: "1", at: Date.now() - 1000 }); // sin txHash
+  const r = await c.creador.crear("crash", OWNER, pesosToWei(1000));
+  assert.equal(r.estado, "ya_existente");
+  assert.equal(c.calls.includes("write"), false);
+  assert.equal(c.registry.get("crash")?.fromBlock, "41");
+});
+
+test("intento previo sin hash y barrido que falla: error sin tx", async () => {
+  const c = setup();
+  await c.registry.set("crash2", { estado: "error", owner: OWNER, dailyCap: "1", at: Date.now() - 1000 });
+  (c.creador as any).o.reader.getLogs = async () => {
+    throw new Error("rpc down");
+  };
+  const r = await c.creador.crear("crash2", OWNER, pesosToWei(1000));
+  assert.equal(r.estado, "error");
+  assert.match(r.mensaje, /no te voy a crear dos/);
+  assert.equal(c.calls.includes("write"), false);
+});
+
+test("el alta rechaza owner = wallet del agente", async () => {
+  const c = setup({ walletAddress: OWNER });
+  const r = await c.creador.crear("self", OWNER, pesosToWei(1000));
+  assert.equal(r.estado, "error");
+  assert.match(r.mensaje, /mi wallet.*MiniPay|firme/i);
+  assert.deepEqual(c.calls, []); // ni simuló
+});
+
+test("el nonce de la tx enviada queda guardado en el registro", async () => {
+  const c = setup({ tx: { nonce: 7, blockNumber: null }, waitError: "timeout" });
+  await c.creador.crear("n", OWNER, pesosToWei(1000));
+  assert.equal(c.registry.get("n")?.nonce, 7);
+  assert.equal(c.registry.get("n")?.estado, "error"); // wait falló, pero nonce + txHash quedaron
+  assert.equal(c.registry.get("n")?.txHash, "0xfeed");
+});
+
+test("createVault usa el maxRate configurado y el resumen lo muestra", async () => {
+  const c = setup({ maxRate: pesosToWei(2100) });
+  const r = await c.creador.crear("m", OWNER, pesosToWei(1000));
+  assert.equal(r.estado, "creado");
+  assert.deepEqual(c.writes[0].args, [OWNER, OWNER, pesosToWei(1000), pesosToWei(2100), MAX_SWAP]);
+  assert.match((r as { resumen: string }).resumen, /\$2\.100 por USD₮/);
 });

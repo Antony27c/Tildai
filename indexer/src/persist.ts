@@ -16,6 +16,11 @@ const ms = (x: unknown, what: string) => {
 };
 const optNum = <K extends string>(k: K, x: unknown) => (x == null ? {} : { [k]: ms(x, k) }) as { [P in K]?: number };
 const opt = <K extends string>(k: K, x: unknown) => (x == null ? {} : { [k]: str(x, k) }) as { [P in K]?: string };
+const bool = (x: unknown, what: string) => {
+  if (typeof x !== 'boolean') throw new Error(`${what} no es boolean`);
+  return x;
+};
+const optBool = <K extends string>(k: K, x: unknown) => (x == null ? {} : { [k]: bool(x, k) }) as { [P in K]?: boolean };
 const arr = (x: unknown, what: string): unknown[] => {
   if (!Array.isArray(x)) throw new Error(`${what} no es lista`);
   return x;
@@ -25,7 +30,7 @@ const arr = (x: unknown, what: string): unknown[] => {
 export function serialize(s: Store): string {
   return JSON.stringify(
     {
-      version: 2,
+      version: 3,
       cursor: s.cursor?.toString() ?? null,
       vaultCursor: s.vaultCursor?.toString() ?? null,
       vaults: [...s.vaults],
@@ -40,7 +45,7 @@ export function serialize(s: Store): string {
 
 export function deserialize(text: string): Store {
   const d = JSON.parse(text);
-  if (d?.version !== 1 && d?.version !== 2) throw new Error('versión desconocida');
+  if (d?.version !== 1 && d?.version !== 2 && d?.version !== 3) throw new Error('versión desconocida');
   const s = new Store();
   s.cursor = d.cursor == null ? null : big(d.cursor, 'cursor');
   s.vaultCursor = d.vaultCursor == null ? null : big(d.vaultCursor, 'vaultCursor');
@@ -71,8 +76,10 @@ export function deserialize(text: string): Store {
       id: str(x.id, 'payment.id'), vault: str(x.vault, 'payment.vault'), from: str(x.from, 'payment.from'),
       amount: big(x.amount, 'payment.amount'), block: big(x.block, 'payment.block'), txHash: str(x.txHash, 'payment.txHash'),
       ...optNum('timestamp', x.timestamp),
+      ...optBool('timestampUnavailable', x.timestampUnavailable), // v3; un store viejo sin el campo reintenta y re-marca si sigue podado
       ...opt('saleId', x.saleId),
     };
+    if (p.timestamp != null) delete p.timestampUnavailable; // la fecha manda: un archivo viejo puede traer las dos cosas
     s.payments.set(p.id, p);
   }
   return s;

@@ -15,13 +15,20 @@ function chainReader(env: Env): Reader {
   return createPublicClient({ chain, transport: http(env.TILDAI_RPC_URL || undefined) });
 }
 
+// isVault es inmutable (la factory nunca des-registra un vault): se cachea por chain y dirección.
+const okVaults = new Set<string>();
+
 export async function checkVault(vault: string | undefined, env: Env = process.env, reader?: Reader): Promise<VaultCheck> {
   if (!vault || !isAddress(vault)) return { status: "invalid" };
-  if (env.TILDAI_DEMO === "1") return { status: "ok" };
+  // el modo demo jamás saltea isVault en mainnet
+  if (env.TILDAI_DEMO === "1" && env.TILDAI_CHAIN_ID !== "42220") return { status: "ok" };
+  const key = `${env.TILDAI_CHAIN_ID}:${vault.toLowerCase()}`;
+  if (okVaults.has(key)) return { status: "ok" };
   try {
     const factory = env.TILDAI_FACTORY;
     if (!factory || !isAddress(factory)) throw new Error("TILDAI_FACTORY falta o es inválida");
     const ok = await (reader ?? chainReader(env)).readContract({ address: factory, abi, functionName: "isVault", args: [vault] });
+    if (ok === true) okVaults.add(key);
     return ok === true ? { status: "ok" } : { status: "invalid" };
   } catch (e) {
     console.error("checkVault falló", e);

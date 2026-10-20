@@ -40,6 +40,8 @@ export type ChainReader = {
   getLogs(args: any): Promise<any[]>;
   getBlock(args: any): Promise<{ timestamp: bigint }>;
   getTransactionReceipt?(args: any): Promise<{ status: string; logs?: any[] } | null>;
+  getTransaction?(args: any): Promise<{ nonce?: number; blockNumber?: bigint | null } | null>;
+  getTransactionCount?(args: any): Promise<number>;
 };
 
 export type Balances = {

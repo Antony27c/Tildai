@@ -29,3 +29,11 @@ test("parseAmount sigue el formato argentino", () => {
 test("parseAmount descarta basura", () => {
   for (const x of ["abc", "-5", "", "8.5.5", "1e3", "8,5,5", "0", undefined]) assert.equal(parseAmount(x), null, String(x));
 });
+
+test("parseAmount rechaza más de 2 decimales en vez de redondear", () => {
+  assert.equal(parseAmount("1.000,999"), null);
+  assert.equal(parseAmount("0,005"), null);
+  assert.equal(parseAmount("8,555"), null);
+  assert.equal(parseAmount("8,55"), 8.55);
+  assert.equal(parseAmount("8,5"), 8.5);
+});

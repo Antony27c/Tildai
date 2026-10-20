@@ -14,6 +14,8 @@ export type Sale = {
 const DAY = 86_400_000;
 const AR_OFFSET = 3 * 3_600_000; // Argentina is UTC-3 all year
 export const dayIndex = (ts: number) => Math.floor((ts - AR_OFFSET) / DAY);
+/** [since, until) in ms covering one Argentine day, for the indexer's ranged endpoints. */
+export const rangoDia = (day: number) => ({ since: day * DAY + AR_OFFSET, until: (day + 1) * DAY + AR_OFFSET });
 
 // shortcut: in-memory sales, lost on restart; persist when the indexer lands.
 export class SalesBook {
