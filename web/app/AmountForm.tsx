@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { buildRipioLink, parseAmount } from "../lib/ripio.ts";
 import { payUrl } from "../lib/sale.ts";
 import { pollSale, type PollOutcome } from "../lib/poll.ts";
-import { checkWarsWallet, payWithWars } from "../lib/buyer.ts";
+import { checkWarsWallet, isMiniPay, payWithWars } from "../lib/buyer.ts";
 import { choosePayOption, PESOS_NOTE, X402_MIN, type PayOption } from "../lib/wars.ts";
 import { payStatus } from "./cobro/status.ts";
 import Tick from "./cobro/Tick.tsx";
@@ -27,7 +27,9 @@ export default function AmountForm({ vault, fixed, sale }: { vault: string; fixe
   const [outcome, setOutcome] = useState<PollOutcome | null>(null);
   const [pending, setPending] = useState(false);
   const [settled, setSettled] = useState(false);
+  const [miniPay, setMiniPay] = useState(false);
   useEffect(() => {
+    setMiniPay(isMiniPay(window.ethereum));
     checkWarsWallet(window.ethereum).then((c) => setOption(choosePayOption(c)));
   }, []);
   useEffect(() => {
@@ -50,7 +52,8 @@ export default function AmountForm({ vault, fixed, sale }: { vault: string; fixe
   const payPesos = () => {
     if (!amount) return;
     const link = buildRipioLink(amount, vault);
-    if (!sale) return void (window.location.href = link);
+    // MiniPay no tiene tabs: target=_blank puede no abrir nada; se navega en la misma vista.
+    if (!sale || miniPay) return void (window.location.href = link);
     window.open(link, "_blank", "noopener");
     setPaid(true);
   };
@@ -118,7 +121,12 @@ export default function AmountForm({ vault, fixed, sale }: { vault: string; fixe
           {option === "wars" && amount !== null && amount < X402_MIN && (
             <p className={styles.hint}>Con wARS el mínimo es $ {X402_MIN}; con pesos no hay mínimo.</p>
           )}
-          {option === "pesos" && <p className={styles.hint}>{PESOS_NOTE}</p>}
+          {option === "pesos" && (
+            <p className={styles.hint}>
+              {miniPay && "MiniPay todavía no permite pagar con wARS. "}
+              {PESOS_NOTE}
+            </p>
+          )}
         </div>
       )}
       {err && (
