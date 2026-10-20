@@ -22,16 +22,6 @@ export default function OpengraphImage() {
           <span style={{ fontSize: 132, fontWeight: 800, letterSpacing: "-0.03em", color: "#201C14" }}>
             tildai
           </span>
-          <svg width="96" height="96" viewBox="0 0 16 16">
-            <path
-              d="M3 8.5 6.5 12 13 4.5"
-              fill="none"
-              stroke="#0E7A3D"
-              strokeWidth="2.4"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
           <svg width="168" height="168" viewBox="0 0 512 512">
             <rect width="512" height="512" rx="116" fill="#0E7A3D" />
             <path
