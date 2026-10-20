@@ -2,7 +2,7 @@
 
 Indexa `Transfer` de wARS hacia los vaults (descubiertos vía `VaultCreated` de la factory) y concilia ventas. Corre con `npm start`; tests con `npm test` (`TILDAI_OFFLINE=1` saltea el test contra Sepolia).
 
-Variables: `TILDAI_INDEXER_TOKEN` (mín. 16 caracteres) y `TILDAI_STORE_PATH` (JSON donde persiste el estado) obligatorias; `TILDAI_NETWORK` (`celo` por defecto o `celo-sepolia`); en mainnet además `TILDAI_FACTORY` y `TILDAI_FROM_BLOCK` (en Sepolia salen de `contracts/deployments/celo-sepolia.json`). Opcionales: `TILDAI_WARS`, `RPC_URL`, `TILDAI_POLL_SECONDS` (10), `TILDAI_PORT` (8787), `TILDAI_HOST` (127.0.0.1).
+Variables: `TILDAI_INDEXER_TOKEN` (mín. 32 caracteres) y `TILDAI_STORE_PATH` (JSON donde persiste el estado) obligatorias; `TILDAI_NETWORK` (`celo` por defecto o `celo-sepolia`); en mainnet además `TILDAI_FACTORY` y `TILDAI_FROM_BLOCK` (en Sepolia salen de `contracts/deployments/celo-sepolia.json`). Opcionales: `TILDAI_WARS`, `RPC_URL`, `TILDAI_ARCHIVE_RPC_URL`, `TILDAI_POLL_SECONDS` (10), `TILDAI_PORT` (8787), `TILDAI_HOST` (127.0.0.1).
 
 ## Correr en un server
 
@@ -25,7 +25,7 @@ Variables (si falta o es inválida alguna obligatoria, el proceso falla al inici
 | `TILDAI_PORT` / `TILDAI_HOST` | Default `8787` / `127.0.0.1`. |
 | `TILDAI_POLL_SECONDS` | Segundos entre polls, entero. Default `10`. |
 
-El store queda en `TILDAI_STORE_PATH`: se guarda tras cada cambio y al apagar con SIGINT/SIGTERM (apagado prolijo: no acepta más requests, termina el tramo de logs en curso y persiste). Healthcheck sin auth: `GET /health` → `{cursor, vaults}`.
+El store queda en `TILDAI_STORE_PATH`: se guarda tras cada cambio y al apagar con SIGINT/SIGTERM (apagado prolijo: no acepta más requests, termina el tramo de logs en curso y persiste). El JSON es versionado (hoy v3; lee stores v1, v2 y v3 — un código viejo que abra un store v3 falla en claro, no lo lee a medias). Healthcheck sin auth: `GET /health` → `{cursor, vaults}`.
 
 Si se expone fuera de localhost, tiene que ser **detrás de un proxy con https**: el `Bearer` viaja en cada request y por `http://` queda en texto plano (además el server no hace TLS ni rate limit).
 
