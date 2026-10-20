@@ -4,7 +4,8 @@ import { rangoDia } from "./sales.ts";
 import type { Transfer, Vault } from "./vault.ts";
 
 // The indexer's HTTP API (indexer/src/server.ts): Bearer auth, amounts as wei strings, ms timestamps.
-export type IndexerPayment = { id: string; from: string; amount: string; txHash: string; timestamp: number | null; saleId?: string };
+// timestampUnavailable marks payments whose block the RPC already pruned: permanent, no date ever.
+export type IndexerPayment = { id: string; from: string; amount: string; txHash: string; timestamp: number | null; timestampUnavailable?: boolean; saleId?: string };
 export type IndexerEvent = {
   seq: number;
   type: "venta_cobrada" | "pago_sin_venta";
@@ -59,7 +60,9 @@ export class IndexerVault implements Vault {
 
 /**
  * Totals for one Argentine day via the ranged endpoint. Throws on network errors and on the indexer's 503
- * ("pagos sin timestamp todavía"): callers that move money treat a throw as "datos pendientes", never as zero.
+ * (payments still waiting for a timestamp): callers that move money treat a throw as "datos pendientes",
+ * never as zero. Pruned-block payments (timestampUnavailable) don't 503: they're left out of the range and
+ * callers must count them apart via the unranged endpoint.
  */
 export async function ventasDelDia(indexer: Indexer, vault: string, day: number): Promise<{ total: bigint; count: number }> {
   const pagos = await indexer.pagosDelVault(vault, rangoDia(day));
