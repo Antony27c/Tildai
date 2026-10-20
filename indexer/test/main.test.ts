@@ -30,6 +30,7 @@ test('arranque: variable obligatoria ausente o inválida falla nombrándola', as
   await assert.rejects(start(env({ TILDAI_STORE_PATH: undefined })), /TILDAI_STORE_PATH/);
   await assert.rejects(start(env({ TILDAI_NETWORK: 'polygon' })), /TILDAI_NETWORK/);
   await assert.rejects(start(env({ RPC_URL: 'no-es-url' })), /RPC_URL/);
+  await assert.rejects(start(env({ TILDAI_ARCHIVE_RPC_URL: 'no-es-url' })), /TILDAI_ARCHIVE_RPC_URL/);
   await assert.rejects(start(env({ TILDAI_FACTORY: '0x123' })), /TILDAI_FACTORY/);
   await assert.rejects(start(env({ TILDAI_WARS: '0xzz' })), /TILDAI_WARS/);
   await assert.rejects(start(env({ TILDAI_FROM_BLOCK: 'abc' })), /TILDAI_FROM_BLOCK/);

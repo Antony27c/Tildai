@@ -45,7 +45,7 @@ async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> 
   return body as Record<string, unknown>;
 }
 
-const pview = (p: Payment) => ({ id: p.id, from: p.from, amount: p.amount.toString(), txHash: p.txHash, timestamp: p.timestamp ?? null, ...(p.saleId && { saleId: p.saleId }) });
+const pview = (p: Payment) => ({ id: p.id, from: p.from, amount: p.amount.toString(), txHash: p.txHash, timestamp: p.timestamp ?? null, ...(p.timestampUnavailable && { timestampUnavailable: true }), ...(p.saleId && { saleId: p.saleId }) });
 
 // txHash queda por compatibilidad como el último informado; la lista completa es txHashes.
 const view = (s: Sale) => ({ id: s.id, vault: s.vault, amount: s.amount.toString(), status: s.status, txHashes: s.txHashes, ...(s.txHashes.length && { txHash: s.txHashes.at(-1) }) });
@@ -162,11 +162,13 @@ export function createApp(o: { indexer: Indexer; store: Store; token: string; ch
       const vault = vaultParam(url);
       const [since, until] = range(url);
       const list = [...store.payments.values()].filter((p) => p.vault === vault);
-      // Con rango y pagos sin timestamp la respuesta no es confiable: 503 para reintentar. Sin rango, se incluyen con timestamp null.
-      if ((url.searchParams.has('since') || url.searchParams.has('until')) && list.some((p) => p.timestamp == null)) {
+      const ranged = url.searchParams.has('since') || url.searchParams.has('until');
+      // Con rango: 503 solo si hay pagos esperando fecha por un error transitorio (reintentar); los marcados
+      // timestampUnavailable (bloque podado, permanente) se excluyen y la respuesta es 200. Sin rango, se incluyen con timestamp null.
+      if (ranged && list.some((p) => p.timestamp == null && !p.timestampUnavailable)) {
         throw new HttpError(503, 'hay pagos sin timestamp todavía, reintenta');
       }
-      return send(res, 200, list.filter((p) => p.timestamp == null || (p.timestamp >= since && p.timestamp < until)).sort((a, b) => Number(a.block - b.block)).map(pview));
+      return send(res, 200, list.filter((p) => (p.timestamp == null ? !ranged : p.timestamp >= since && p.timestamp < until)).sort((a, b) => Number(a.block - b.block)).map(pview));
     }
     if (key === 'GET /events') {
       const since = intParam(url, 'since', 0);

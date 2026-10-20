@@ -50,7 +50,7 @@ test('la escritura atómica no deja temporales', async () => {
   assert.deepEqual(await readdir(join(path, '..')), ['store.json']);
 });
 
-test('un store v1 con txHash suelto migra a txHashes y se reescribe como v2', async () => {
+test('un store v1 con txHash suelto migra a txHashes y se reescribe como v3', async () => {
   const v1 = JSON.stringify({
     version: 1, cursor: null, vaultCursor: null, vaults: [[V1, '0x00000000000000000000000000000000000000c1']], events: [],
     sales: [{ id: 's1', vault: V1, amount: '9', createdBlock: '1', createdAt: 0, status: 'pendiente', txHash: h1 }],
@@ -58,9 +58,24 @@ test('un store v1 con txHash suelto migra a txHashes y se reescribe como v2', as
   });
   const s = deserialize(v1);
   assert.deepEqual(s.sales.get('s1')!.txHashes, [h1]);
-  const d2 = JSON.parse(serialize(s));
-  assert.equal(d2.version, 2);
-  assert.deepEqual(d2.sales[0].txHashes, [h1]);
+  const d3 = JSON.parse(serialize(s));
+  assert.equal(d3.version, 3);
+  assert.deepEqual(d3.sales[0].txHashes, [h1]);
+});
+
+test('timestampUnavailable hace ida y vuelta (v3); un store v2 lo lee sin el campo', async () => {
+  const s = new Store();
+  s.payments.set('p:0', { id: 'p:0', vault: V1, from: '0x00000000000000000000000000000000000000b1', amount: 9n, block: 1n, txHash: h1, timestampUnavailable: true });
+  const vuelta = deserialize(serialize(s));
+  assert.equal(vuelta.payments.get('p:0')!.timestampUnavailable, true);
+  // v2 no conocía el campo: deserializa igual y el pago se re-marca en el próximo poll.
+  const v2 = JSON.stringify({ version: 2, cursor: null, vaultCursor: null, vaults: [], events: [], sales: [], payments: [{ id: 'p:0', vault: V1, from: '0x00000000000000000000000000000000000000b1', amount: '9', block: '1', txHash: h1 }] });
+  assert.equal(deserialize(v2).payments.get('p:0')!.timestampUnavailable, undefined);
+  // Un booleano que no es booleano rompe, como el resto de los campos.
+  const malo = JSON.parse(v2);
+  malo.version = 3;
+  malo.payments[0].timestampUnavailable = 'si';
+  assert.throws(() => deserialize(JSON.stringify(malo)), /timestampUnavailable no es boolean/);
 });
 
 test('archivo ausente es primer arranque: store vacío', async () => {
