@@ -78,7 +78,7 @@ test("confirmada: 5+ confirmaciones, monto bigint, vault y scan de Sepolia", asy
   assert.equal(r.confirmations, 5);
   assert.deepEqual(r.rows, [{ to: VAULT, amount: 1_234_567_890_000_000_000_000n }]);
   assert.equal(r.scan, `https://celo-sepolia.blockscout.com/tx/${TX}`);
-  assert.equal(r.blockTime.toISOString(), "2025-10-09T08:53:20.000Z");
+  assert.equal(r.blockTime?.toISOString(), "2025-10-09T08:53:20.000Z");
   assert.equal(formatPesos(String(r.rows[0].amount)), "$ 1.234,56"); // trunca, no redondea
 });
 
@@ -91,6 +91,30 @@ test("varios Transfer a vaults: uno por fila; mezclados con no-vault solo cuenta
   const r = await verifyComprobante(TX, SEPOLIA, reader({ receipt: receipt(logs), vaults: new Set([VAULT, VAULT2]) }));
   assert.equal(r.kind, "confirmed");
   if (r.kind === "confirmed") assert.equal(r.rows.length, 2);
+});
+
+test("bloque podado en el RPC: confirmado igual, con fecha no disponible", async () => {
+  const r = await verifyComprobante(TX, SEPOLIA, {
+    ...reader({ receipt: receipt([tlog(WARS_SEPOLIA, VAULT, 10n ** 18n)]) }),
+    getBlock: async () => { throw new Error("block is more than 10064 blocks behind head"); },
+  });
+  assert.equal(r.kind, "confirmed");
+  if (r.kind === "confirmed") assert.equal(r.blockTime, null);
+});
+
+test("log con blockTimestamp: fecha del log aunque el bloque esté podado", async () => {
+  const log = { ...tlog(WARS_SEPOLIA, VAULT, 10n ** 18n), blockTimestamp: 1_770_000_000n };
+  const r = await verifyComprobante(TX, SEPOLIA, {
+    ...reader({ receipt: receipt([log]) }),
+    getBlock: async () => { throw new Error("pruned"); },
+  });
+  assert.equal(r.kind, "confirmed");
+  if (r.kind === "confirmed") assert.equal(r.blockTime?.getTime(), 1_770_000_000_000);
+});
+
+test("TILDAI_DEMO=1 no relaja el comprobante: destino que no es vault sigue siendo not_payment", async () => {
+  const r = await verifyComprobante(TX, { ...SEPOLIA, TILDAI_DEMO: "1" }, reader({ receipt: receipt([tlog(WARS_SEPOLIA, PAYER, 10n ** 18n)]) }));
+  assert.equal(r.kind, "not_payment");
 });
 
 test("mainnet: usa la constante WARS y Celoscan", async () => {

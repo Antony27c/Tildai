@@ -11,7 +11,7 @@ export type Comprobante =
   | { kind: "no_network" }
   | { kind: "unavailable" }
   | { kind: "not_payment" }
-  | { kind: "pending" | "confirmed"; rows: PaymentRow[]; blockTime: Date; confirmations: number; scan: string };
+  | { kind: "pending" | "confirmed"; rows: PaymentRow[]; blockTime: Date | null; confirmations: number; scan: string };
 
 type Reader = {
   getTransactionReceipt(a: { hash: `0x${string}` }): Promise<any>;
@@ -50,7 +50,8 @@ export async function verifyComprobante(txHash: string | undefined, env: Env = p
     .filter((l) => l.address.toLowerCase() === wars.toLowerCase());
   const okVaults = new Set<string>();
   for (const to of new Set(events.map((e) => String(e.args.to)))) {
-    const c = await checkVault(to, env, reader);
+    // Un comprobante nunca toma el atajo de TILDAI_DEMO: el vault se valida siempre en la factory.
+    const c = await checkVault(to, { ...env, TILDAI_DEMO: undefined }, reader);
     if (c.status === "error") return { kind: "unavailable" }; // no pudimos verificar el destino: no inventamos
     if (c.status === "ok") okVaults.add(to.toLowerCase());
   }
@@ -61,17 +62,32 @@ export async function verifyComprobante(txHash: string | undefined, env: Env = p
   }
   if (!rows.length) return { kind: "not_payment" };
 
+  let latest: bigint;
   try {
-    const [latest, block] = await Promise.all([reader.getBlockNumber(), reader.getBlock({ blockNumber: receipt.blockNumber })]);
-    const confirmations = Number(latest - receipt.blockNumber + 1n);
-    return {
-      kind: confirmations >= MIN_CONFIRMATIONS ? "confirmed" : "pending",
-      rows,
-      blockTime: new Date(Number(block.timestamp) * 1000),
-      confirmations,
-      scan: `${scans[chain.id]}${txHash}`,
-    };
+    latest = await reader.getBlockNumber();
   } catch {
     return { kind: "unavailable" };
+  }
+  const confirmations = Number(latest - receipt.blockNumber + 1n);
+  return {
+    kind: confirmations >= MIN_CONFIRMATIONS ? "confirmed" : "pending",
+    rows,
+    blockTime: await blockTime(reader, receipt.blockNumber, receipt.logs ?? []),
+    confirmations,
+    scan: `${scans[chain.id]}${txHash}`,
+  };
+}
+
+// La fecha no decide el estado del pago: si el RPC no sirve el bloque va null
+// y la página muestra "fecha no disponible". Nunca se estima por número de bloque.
+async function blockTime(reader: Reader, blockNumber: bigint, logs: { blockTimestamp?: unknown }[]): Promise<Date | null> {
+  // Forno devuelve blockTimestamp en los logs del recibo: si está, es la fecha real.
+  const ts = logs.find((l) => l.blockTimestamp != null)?.blockTimestamp;
+  if (ts != null) return new Date(Number(ts) * 1000);
+  try {
+    const block = await reader.getBlock({ blockNumber });
+    return new Date(Number(block.timestamp) * 1000);
+  } catch {
+    return null;
   }
 }

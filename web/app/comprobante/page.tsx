@@ -27,10 +27,12 @@ export default async function ComprobantePage({ searchParams }: { searchParams: 
       </main>
     );
   }
-  const fecha = r.blockTime.toLocaleString("es-AR", {
-    timeZone: "America/Argentina/Buenos_Aires",
-    day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
-  });
+  const fecha = r.blockTime
+    ? r.blockTime.toLocaleString("es-AR", {
+        timeZone: "America/Argentina/Buenos_Aires",
+        day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
+      })
+    : "Fecha no disponible";
   return (
     <main className={styles.main}>
       <p className={styles.brand}>Tildai ✓</p>
