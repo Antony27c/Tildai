@@ -47,7 +47,8 @@ async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> 
 
 const pview = (p: Payment) => ({ id: p.id, from: p.from, amount: p.amount.toString(), txHash: p.txHash, timestamp: p.timestamp ?? null, ...(p.saleId && { saleId: p.saleId }) });
 
-const view = (s: Sale) => ({ id: s.id, vault: s.vault, amount: s.amount.toString(), status: s.status, ...(s.txHash && { txHash: s.txHash }) });
+// txHash queda por compatibilidad como el último informado; la lista completa es txHashes.
+const view = (s: Sale) => ({ id: s.id, vault: s.vault, amount: s.amount.toString(), status: s.status, txHashes: s.txHashes, ...(s.txHashes.length && { txHash: s.txHashes.at(-1) }) });
 
 const intParam = (url: URL, name: string, def: number) => {
   const v = url.searchParams.get(name);
@@ -71,7 +72,47 @@ const range = (url: URL): [number, number] => {
   return [since, until];
 };
 
-export function createApp(o: { indexer: Indexer; store: Store; token: string; onError?: (e: unknown) => void }): Server {
+const DAY = 86_400_000;
+const AR = -3 * 3_600_000; // hora argentina: UTC-3 fijo, sin cambio de hora
+const arDay = (ms: number) => new Date(ms + AR).toISOString().slice(0, 10);
+
+// Métricas para la entrega. Un pago sin timestamp cuenta en los totales pero no en
+// byDay ni en activeVaults7d: ubicarlo en un día sería inventar la fecha.
+export function stats(store: Store, chainId: number, now = Date.now()) {
+  const days = new Map<string, { payments: number; warsReceived: bigint }>();
+  for (let i = 13; i >= 0; i--) days.set(arDay(now - i * DAY), { payments: 0, warsReceived: 0n });
+  const active = new Set<string>();
+  let warsReceived = 0n;
+  let paymentsWithoutTimestamp = 0;
+  for (const p of store.payments.values()) {
+    warsReceived += p.amount;
+    if (p.timestamp == null) {
+      paymentsWithoutTimestamp++;
+      continue;
+    }
+    if (arDay(p.timestamp) >= arDay(now - 6 * DAY)) active.add(p.vault); // 7 días calendario AR, como byDay
+    const d = days.get(arDay(p.timestamp));
+    if (d) {
+      d.payments++;
+      d.warsReceived += p.amount;
+    }
+  }
+  let salesCobradas = 0;
+  for (const s of store.sales.values()) if (s.status === 'cobrada') salesCobradas++;
+  return {
+    chainId,
+    vaults: store.vaults.size,
+    activeVaults7d: active.size,
+    payments: store.payments.size,
+    salesCobradas,
+    warsReceived: warsReceived.toString(),
+    paymentsWithoutTimestamp,
+    byDay: [...days].map(([day, d]) => ({ day, payments: d.payments, warsReceived: d.warsReceived.toString() })),
+    generatedAt: new Date(now).toISOString(),
+  };
+}
+
+export function createApp(o: { indexer: Indexer; store: Store; token: string; chainId: number; onError?: (e: unknown) => void }): Server {
   const { indexer, store } = o;
   const log = o.onError ?? ((e: unknown) => console.error('server:', e));
 
@@ -121,7 +162,6 @@ export function createApp(o: { indexer: Indexer; store: Store; token: string; on
       const vault = vaultParam(url);
       const [since, until] = range(url);
       const list = [...store.payments.values()].filter((p) => p.vault === vault);
-      // Si falta algún timestamp el rango no es confiable: 503 para que el agente reintente, nunca una respuesta a medias.
       // Con rango y pagos sin timestamp la respuesta no es confiable: 503 para reintentar. Sin rango, se incluyen con timestamp null.
       if ((url.searchParams.has('since') || url.searchParams.has('until')) && list.some((p) => p.timestamp == null)) {
         throw new HttpError(503, 'hay pagos sin timestamp todavía, reintenta');
@@ -136,6 +176,7 @@ export function createApp(o: { indexer: Indexer; store: Store; token: string; on
       // El cursor es el seq del último evento devuelto: con más de 500, el agente sigue desde ahí y no se saltea.
       return send(res, 200, { events: list, cursor: list.at(-1)?.seq ?? since });
     }
+    if (key === 'GET /stats') return send(res, 200, stats(store, o.chainId));
     throw new HttpError(404, 'ruta inexistente');
   }
 

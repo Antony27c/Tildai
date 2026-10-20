@@ -1,0 +1,121 @@
+.main {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: var(--s5, 32px) var(--s4, 24px);
+  min-height: 100vh;
+  font-family: var(--font-sans, system-ui, sans-serif);
+  background: var(--bg, #f6f7f9);
+  color: var(--fg, #111);
+}
+
+.title {
+  margin: 0;
+  font-size: 1.8rem;
+}
+
+.sub {
+  margin: var(--s1, 4px) 0 0;
+  color: var(--muted, #555);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: var(--s3, 12px);
+  margin: var(--s5, 32px) 0;
+}
+
+.card {
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e2e4e8);
+  border-radius: var(--radius, 10px);
+  padding: var(--s4, 16px);
+}
+
+.label {
+  font-size: 0.8rem;
+  color: var(--muted, #555);
+}
+
+.value {
+  margin-top: var(--s1, 4px);
+  font-family: var(--font-sans, system-ui, sans-serif);
+  font-variant-numeric: tabular-nums;
+  font-size: 1.4rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.total {
+  grid-column: 1 / -1;
+}
+
+.total .value {
+  font-size: clamp(1.6rem, 7vw, 2.4rem);
+}
+
+.h2 {
+  margin: 0 0 var(--s3, 12px);
+  font-size: 1.05rem;
+}
+
+.chart {
+  display: flex;
+  align-items: stretch;
+  gap: var(--s1, 4px);
+  height: 150px;
+  padding: var(--s3, 12px) var(--s3, 12px) var(--s2, 8px);
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e2e4e8);
+  border-radius: var(--radius, 10px);
+}
+
+.col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.barBox {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.bar {
+  width: 70%;
+  max-width: 28px;
+  background: var(--accent, #16a34a);
+  border-radius: 3px 3px 0 0;
+}
+
+.day {
+  margin-top: var(--s1, 4px);
+  font-size: 0.75rem;
+  text-align: center;
+  color: var(--muted, #555);
+}
+
+.note {
+  margin-top: var(--s3, 12px);
+  font-size: 0.8rem;
+  color: var(--warn, #b45309);
+}
+
+.footer {
+  margin-top: var(--s6, 48px);
+  padding-top: var(--s3, 12px);
+  border-top: 1px solid var(--border, #e2e4e8);
+  font-size: 0.75rem;
+  color: var(--muted, #555);
+}
+
+.error {
+  padding: var(--s4, 16px);
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e2e4e8);
+  border-radius: var(--radius, 10px);
+  color: var(--danger, #b91c1c);
+}
