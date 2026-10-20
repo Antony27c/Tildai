@@ -1,6 +1,6 @@
 import { defaultTelegramAuth, telegramChannel } from "eve/channels/telegram";
 
-import { chatHabilitado } from "../src/alta.ts";
+import { chatHabilitado, deberiaAvisar } from "../src/alta.ts";
 import { chatRegistry } from "../src/runtime.ts";
 import { looksLikeSecret } from "../src/secrets.ts";
 
@@ -9,6 +9,9 @@ const AVISO_SECRETO =
 
 const AVISO_NO_AUTORIZADO =
   "Hola, soy Tildai, la caja de los comercios. El alta es por invitación y está cerrada para este chat. Si te convocaron, pedile al equipo que habilite este chat id.";
+
+/** One "closed sign-up" reply per chat per process: strangers can't drain the bot's Telegram quota. */
+const avisadosNoAutorizados = new Set<string>();
 
 // Secrets never reach the model: they're deleted here. Sign-up spends agent gas, so unknown chats only get a
 // polite reply unless they're allowlisted (TILDAI_ALLOWED_CHATS) or sign-up is open (TILDAI_OPEN_SIGNUP=1).
@@ -21,7 +24,9 @@ export default telegramChannel({
     }
     if (!chatHabilitado(message.chat.id, chatRegistry(), process.env)) {
       console.error(`[tildai] mensaje ignorado del chat ${message.chat.id}: sin alta habilitada (TILDAI_ALLOWED_CHATS / TILDAI_OPEN_SIGNUP)`);
-      ctx.telegram.sendMessage(AVISO_NO_AUTORIZADO).catch((e) => console.error("[tildai] no pude responder al chat no autorizado", e));
+      if (deberiaAvisar(message.chat.id, avisadosNoAutorizados)) {
+        ctx.telegram.sendMessage(AVISO_NO_AUTORIZADO).catch((e) => console.error("[tildai] no pude responder al chat no autorizado", e));
+      }
       return null;
     }
     const auth = defaultTelegramAuth(message);

@@ -4,6 +4,15 @@ import type { BucketName, Fx, OpRecord, SwapBucket, VaultOps } from "./vaultOps.
 // Argentine day, same cut as the vault (UTC-3).
 const fechaART = (now: number) => new Date(now - 3 * 3_600_000).toISOString().slice(0, 10);
 
+/**
+ * Deterministic op id built by the code (never the model): retries of the same Telegram message dedupe
+ * through usedOp; a new message is a new op. Without message_id it falls back to the Argentine day.
+ */
+export function idDeOperacion(tipo: string, attrs: Record<string, unknown> | undefined, ...partes: (string | number | bigint)[]): string {
+  const ancla = attrs?.message_id ?? fechaART(Date.now());
+  return [tipo, String(attrs?.chat_id ?? "?"), String(ancla), ...partes.map(String)].join(":");
+}
+
 const view = (r: OpRecord) => ({ id: r.id, resultado: r.resultado, monto: formatPesos(r.monto), destino: r.destino, txHash: r.txHash, error: r.error, mensaje: r.mensaje });
 
 /** Default id dedupes the same action, bucket and amount on the same day; pass idOperacion to repeat it on purpose. */

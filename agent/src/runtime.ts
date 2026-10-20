@@ -1,13 +1,15 @@
 import { createPublicClient, http, type Address, type Hex } from "viem";
 import { celo, celoSepolia } from "viem/chains";
 
+import { sendTelegramMessage } from "eve/channels/telegram";
+
 import { agentClients } from "./chain.ts";
 import { EventCursor } from "./avisos.ts";
 import { ChainVault, type Balances } from "./chainVault.ts";
 import { indexerClient, IndexerVault, type Indexer } from "./indexerClient.ts";
 import { SalesBook } from "./sales.ts";
 import { FakeVault, type Vault } from "./vault.ts";
-import { ChatVaultRegistry, CreadorVault } from "./alta.ts";
+import { ChatVaultRegistry, CreadorVault, maxRateAlta, numEnv } from "./alta.ts";
 import { VaultOps, type Fx } from "./vaultOps.ts";
 
 const network = process.env.TILDAI_NETWORK === "celoSepolia" ? "celoSepolia" : "celo";
@@ -27,6 +29,11 @@ export function chatIdDe(ctx: ToolCtx): string {
   if (typeof id !== "string" || !id) throw new Error("Esto solo funciona desde un chat de Telegram");
   if (a?.chat_type !== "private") throw new Error("Hablamos por privado, no en grupo: es tu plata");
   return id;
+}
+
+/** Raw auth attributes of the current message (chat_id, message_id, ...); tools derive op ids from them. */
+export function attrsDe(ctx: ToolCtx): Record<string, unknown> | undefined {
+  return ctx?.session?.auth?.current?.attributes;
 }
 
 let registry: ChatVaultRegistry | undefined;
@@ -86,11 +93,36 @@ export function bookDelChat(ctx: ToolCtx): SalesBook {
 const opsByVault = new Map<string, VaultOps>();
 export function opsDelVault(address: Address): VaultOps {
   let o = opsByVault.get(address);
-  if (!o) opsByVault.set(address, (o = new VaultOps({ vault: address, feeCurrency: network === "celo" ? USDT_FEE_ADAPTER : undefined, ...agentClients(network, need("AGENT_PRIVATE_KEY") as Hex) })));
+  if (!o) opsByVault.set(address, (o = new VaultOps({ ...opsBase(address), ...agentClients(network, need("AGENT_PRIVATE_KEY") as Hex) })));
   return o;
 }
 export function opsDelChat(ctx: ToolCtx): VaultOps {
   return opsDelVault(vaultDelChat(ctx).address);
+}
+
+/** Chat that owns a vault (registry first, env vault + owner chat as fallback): who gets the Telegram alert. */
+export function chatDelVault(address: Address): string | undefined {
+  const reg = chatRegistry().conVault().find((e) => e.vault.toLowerCase() === address.toLowerCase())?.chatId;
+  return reg ?? (address === vaultAddress ? process.env.TILDAI_OWNER_CHAT_ID : undefined);
+}
+
+/** VaultOps wiring shared by every vault: persisted op log plus Telegram alert to the vault's owner chat. */
+function opsBase(address: Address) {
+  return {
+    vault: address,
+    feeCurrency: network === "celo" ? USDT_FEE_ADAPTER : undefined,
+    recordsFile: process.env.TILDAI_OPS_FILE ?? "data/ops.jsonl",
+    notify: async (msg: string) => {
+      console.error("[tildai] ALERTA", msg);
+      const chatId = chatDelVault(address);
+      if (!chatId) return;
+      try {
+        await sendTelegramMessage({ chatId, body: { text: `Aviso de Tildai: ${msg}` } });
+      } catch (e) {
+        console.error("[tildai] no pude mandar el aviso por Telegram", e);
+      }
+    },
+  };
 }
 
 /** Every chat→vault in the registry, plus the env vault of the owner chat if it isn't registered: used by the daily close and the sale notifications. */
@@ -124,7 +156,7 @@ let ops: VaultOps | undefined;
 /** Writes go only through agentClients() (attribution tag). Reads the key lazily and never logs it. */
 export function vaultOps() {
   if (!vaultAddress) throw new Error("Falta TILDAI_VAULT: sin vault real no se mueven fondos");
-  if (!ops) ops = new VaultOps({ vault: vaultAddress, feeCurrency: network === "celo" ? USDT_FEE_ADAPTER : undefined, ...agentClients(network, need("AGENT_PRIVATE_KEY") as Hex) });
+  if (!ops) ops = new VaultOps({ ...opsBase(vaultAddress), ...agentClients(network, need("AGENT_PRIVATE_KEY") as Hex) });
   return ops;
 }
 
@@ -140,8 +172,8 @@ export function creadorVault() {
   const factory = process.env.TILDAI_FACTORY as Address | undefined;
   if (!factory) throw new Error("Falta TILDAI_FACTORY: no puedo dar de alta el comercio");
   if (!creador) {
-    const maxAltas = Number(process.env.TILDAI_MAX_ALTAS_DIA ?? "5");
-    const pendienteMin = Number(process.env.TILDAI_ALTA_PENDIENTE_MIN ?? "30");
+    const maxAltas = numEnv("TILDAI_MAX_ALTAS_DIA", "5");
+    const pendienteMin = numEnv("TILDAI_ALTA_PENDIENTE_MIN", "30");
     creador = new CreadorVault({
       registry: chatRegistry(),
       factory,
@@ -151,6 +183,7 @@ export function creadorVault() {
       // Un tope inválido cierra las altas (0): ante la duda no se gasta gas.
       maxAltasDia: Number.isFinite(maxAltas) && maxAltas >= 0 ? Math.floor(maxAltas) : 0,
       pendienteMin: Number.isFinite(pendienteMin) && pendienteMin > 0 ? Math.floor(pendienteMin) : 30,
+      maxRate: maxRateAlta(),
       ...agentClients(network, need("AGENT_PRIVATE_KEY") as Hex),
     });
   }

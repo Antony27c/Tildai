@@ -6,7 +6,7 @@ import { test } from "node:test";
 
 import type { Address } from "viem";
 
-import { avisarEventos, EventCursor } from "../src/avisos.ts";
+import { avisarEventos, EventCursor, MAX_REINTENTOS_AVISO } from "../src/avisos.ts";
 import { indexerClient, IndexerVault, ventasDelDia, type Indexer, type IndexerEvent, type IndexerPayment } from "../src/indexerClient.ts";
 import { pesosToWei } from "../src/money.ts";
 import { dayIndex, rangoDia, SalesBook } from "../src/sales.ts";
@@ -81,14 +81,87 @@ test("avisos: cada evento al chat de su vault, en orden y en es-AR", async () =>
   assert.equal(cursor.cursor, 2);
 });
 
-test("un mismo pago no avisa dos veces (pago_sin_venta y después venta_cobrada)", async () => {
+test("x402: pago_sin_venta y después venta_cobrada del mismo pago avisan los dos", async () => {
   const p = pago("p1", 8500);
   const { indexer } = fakeIndexer({ events: [ev(1, "pago_sin_venta", p), ev(2, "venta_cobrada", p)], payments: new Map([[V1.toLowerCase(), [p]]]) });
   const sent: string[] = [];
   const cursor = EventCursor.load(undefined);
   await avisarEventos({ indexer, cursor, vaults: [{ chatId: "c1", vault: V1 }], send: (_c, t) => sent.push(t) });
-  assert.deepEqual(sent, ["Te llegó un pago de $8.500 sin venta asociada"]);
+  assert.deepEqual(sent, ["Te llegó un pago de $8.500 sin venta asociada", "Entró una venta: $8.500 ✓"]);
   assert.equal(cursor.cursor, 2);
+});
+
+test("un chat que bloqueó al bot (error permanente) queda inactivo con ALERTA y el resto sigue", async () => {
+  const pa = pago("pa", 100);
+  const pb = pago("pb", 200);
+  const { indexer } = fakeIndexer({
+    events: [ev(1, "venta_cobrada", pa), ev(2, "venta_cobrada", pb)],
+    payments: new Map([[V1.toLowerCase(), [pa]], [V2.toLowerCase(), [pb]]]),
+  });
+  const cursor = EventCursor.load(undefined);
+  const sentB: string[] = [];
+  const errores: string[] = [];
+  const orig = console.error;
+  console.error = (...a: unknown[]) => errores.push(String(a[0]));
+  const send = async (chat: string, t: string) => {
+    if (chat === "A") throw new Error("Forbidden: bot was blocked by the user");
+    sentB.push(t);
+  };
+  try {
+    for (let i = 0; i < 5; i++) {
+      await avisarEventos({ indexer, cursor, vaults: [{ chatId: "A", vault: V1 }, { chatId: "B", vault: V2 }], send }).catch(() => {});
+    }
+  } finally {
+    console.error = orig;
+  }
+  assert.equal(sentB.length, 1, "tras 5 pasadas el comercio B nunca recibió su venta");
+  assert.match(sentB[0], /Entró una venta: \$200/);
+  assert.equal(cursor.cursor, 2);
+  assert.ok(errores.some((e) => /ALERTA.*chat A/.test(e)), "la desactivación del chat no se logueó como ALERTA");
+});
+
+test("error transitorio: reintenta con backoff y tras el tope salta el evento con ALERTA", async () => {
+  let t = 0;
+  const pa = pago("pa", 100);
+  const pb = pago("pb", 200);
+  const { indexer } = fakeIndexer({
+    events: [ev(1, "venta_cobrada", pa), ev(2, "venta_cobrada", pb)],
+    payments: new Map([[V1.toLowerCase(), [pa]], [V2.toLowerCase(), [pb]]]),
+  });
+  const cursor = EventCursor.load(undefined);
+  const sent: string[] = [];
+  const orig = console.error;
+  console.error = () => {};
+  const send = async (chat: string, txt: string) => {
+    if (chat === "A") throw new Error("telegram caído (500)");
+    sent.push(txt);
+  };
+  try {
+    for (let i = 0; i < MAX_REINTENTOS_AVISO + 2; i++) {
+      await avisarEventos({ indexer, cursor, vaults: [{ chatId: "A", vault: V1 }, { chatId: "B", vault: V2 }], send, now: () => t }).catch(() => {});
+      t += 31 * 60_000; // más que el tope del backoff (30m): cada pasada habilita un reintento
+    }
+  } finally {
+    console.error = orig;
+  }
+  // El evento 1 agotó sus reintentos y se saltó; el 2 llegó a su chat en esa misma pasada.
+  assert.equal(cursor.cursor, 2);
+  assert.deepEqual(sent, ["Entró una venta: $200 ✓"]);
+});
+
+test("rangoDia: bordes de medianoche AR", () => {
+  const t = Date.UTC(2026, 9, 19, 3);
+  const r = rangoDia(dayIndex(t));
+  assert.equal(r.since, t);
+  assert.equal(r.until, t + 86_400_000);
+  assert.equal(rangoDia(dayIndex(t - 1)).until, t);
+});
+
+test("formato: 8.500 pesos en es-AR", async () => {
+  const p = pago("pc", 8500);
+  const sent: string[] = [];
+  await avisarEventos({ indexer: fakeIndexer({ events: [ev(1, "venta_cobrada", p)], payments: new Map([[V1.toLowerCase(), [p]]]) }).indexer, cursor: EventCursor.load(undefined), vaults: [{ chatId: "A", vault: V1 }], send: async (_c, t) => { sent.push(t); } });
+  assert.match(sent[0], /8\.500/);
 });
 
 test("si Telegram falla el cursor no avanza y el reintento reparte desde ahí", async () => {

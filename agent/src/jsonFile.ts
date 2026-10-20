@@ -12,6 +12,18 @@ export function leerJson(file: string, queEs: string): any {
   }
 }
 
+/** Appends one JSON line and fsyncs before returning: a crash can only lose the record being written. */
+export async function appendJsonl(file: string, data: unknown) {
+  mkdirSync(dirname(file), { recursive: true });
+  const f = await open(file, "a");
+  try {
+    await f.writeFile(JSON.stringify(data, (_k, v) => (typeof v === "bigint" ? v.toString() : v)) + "\n", "utf8");
+    await f.sync();
+  } finally {
+    await f.close();
+  }
+}
+
 /** Atomic JSON write via a tmp file + fsync + rename, so a crash never leaves a torn file. */
 export async function escribirJsonAtomico(file: string, data: unknown) {
   mkdirSync(dirname(file), { recursive: true });
