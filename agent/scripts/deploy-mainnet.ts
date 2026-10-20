@@ -122,9 +122,18 @@ export async function deploy(ctx: DeployCtx) {
       }
       assert.ok(runtimeMatches(code, artifact), `el contrato en ${expected} no es el TildaiFactory de este build: revisar a mano`);
       // Recorded only with the creating tx's tag verified: a factory without the tag is not ours.
-      const hash = state.factoryTx ?? (await findDeployHash(expected));
-      const receipt = await reader.getTransactionReceipt({ hash });
-      assert.ok(receipt, `no encontré el recibo de ${hash}: no doy por buena una factory sin tag. Revisar a mano.`);
+      // The lookup needs historical state; on a pruning RPC, filling factoryTx by hand is the way in.
+      let hash: Hex;
+      let receipt;
+      try {
+        hash = state.factoryTx ?? (await findDeployHash(expected));
+        receipt = await reader.getTransactionReceipt({ hash });
+      } catch (e) {
+        throw new Error(
+          `no pude localizar la tx que creó ${expected}: ${e instanceof Error ? e.message : e}. Completá factoryTx a mano en celo.json desde el explorador y volvé a correr.`,
+        );
+      }
+      assert.ok(receipt, `no encontré el recibo de ${hash}: si no es la tx del deploy, corregí factoryTx en celo.json desde el explorador y volvé a correr`);
       await recordFactory(hash, receipt);
       console.log(`✓ TildaiFactory recuperada en mainnet: ${expected} (bloque ${state.factoryBlock}, tx ${hash})`);
       return;
@@ -221,7 +230,11 @@ export async function deploy(ctx: DeployCtx) {
     try {
       receipt = await reader.waitForTransactionReceipt({ hash, confirmations: 2 });
     } catch (e) {
-      console.error(`No apareció el recibo de ${hash}. Si la tx no está en el explorador, revisá celo.json y volvé a correr.`);
+      const hint =
+        state.deployNonce !== undefined
+          ? "Si la tx no existe en el explorador, borrá factoryTx de celo.json y volvé a correr: el script reenvía con el mismo nonce."
+          : "Si la tx no está en el explorador, revisá celo.json y volvé a correr.";
+      console.error(`No apareció el recibo de ${hash}. ${hint}`);
       throw e;
     }
     await recordFactory(hash, receipt);
