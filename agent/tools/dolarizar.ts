@@ -1,8 +1,8 @@
 import { defineTool } from "eve/tools";
 import { z } from "zod";
 
-import { dolarizar } from "../src/fondos.ts";
-import { fx, opsDelChat } from "../src/runtime.ts";
+import { dolarizar, idDeOperacion } from "../src/fondos.ts";
+import { attrsDe, fx, opsDelChat } from "../src/runtime.ts";
 
 export default defineTool({
   description:
@@ -10,7 +10,6 @@ export default defineTool({
   inputSchema: z.object({
     bucket: z.enum(["operativo", "ahorro", "impuestos"]),
     monto: z.number().positive().describe("Monto en pesos argentinos, hasta 2 decimales"),
-    idOperacion: z.string().min(1).optional().describe("Id de negocio. Reusalo al reintentar; usá uno distinto solo si el dueño pide repetir a propósito."),
   }),
-  execute: (input, ctx) => dolarizar(opsDelChat(ctx), fx, input),
+  execute: (input, ctx) => dolarizar(opsDelChat(ctx), fx, { ...input, idOperacion: idDeOperacion("dolarizar", attrsDe(ctx), input.bucket, input.monto) }),
 });

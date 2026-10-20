@@ -1,6 +1,7 @@
 import { keccak256, stringToHex, type Address, type Hex } from "viem";
 
 import { vaultAbi } from "./chainVault.ts";
+import { appendJsonl } from "./jsonFile.ts";
 import { formatPesos } from "./money.ts";
 
 export type OpsReader = {
@@ -13,6 +14,7 @@ export type OpsWallet = { account: { address: Address }; writeContract(args: any
 export type OpRecord = {
   id: string;
   opId: Hex;
+  vault: Address;
   accion: "apartar" | "retirar" | "dolarizar";
   monto: bigint;
   destino: string;
@@ -51,15 +53,15 @@ export const opIdOf = (id: string): Hex => keccak256(stringToHex(id));
 
 export class VaultOps {
   records: OpRecord[] = [];
-  private cfg: { vault: Address; wallet: OpsWallet; reader: OpsReader; feeCurrency?: Address; now: () => number; onRecord: (r: OpRecord) => void; notify: (msg: string) => void };
+  private cfg: { vault: Address; wallet: OpsWallet; reader: OpsReader; feeCurrency?: Address; now: () => number; recordsFile?: string; onRecord: (r: OpRecord) => void; notify: (msg: string) => unknown };
 
-  // shortcut: records live in memory and go to the log; persist them (and push `notify` to Telegram) when the agent has a store.
-  constructor(c: { vault: Address; wallet: OpsWallet; reader: OpsReader; feeCurrency?: Address; now?: () => number; onRecord?: (r: OpRecord) => void; notify?: (msg: string) => void }) {
+  constructor(c: { vault: Address; wallet: OpsWallet; reader: OpsReader; feeCurrency?: Address; recordsFile?: string; now?: () => number; onRecord?: (r: OpRecord) => void; notify?: (msg: string) => unknown }) {
     this.cfg = {
       vault: c.vault,
       wallet: c.wallet,
       reader: c.reader,
       feeCurrency: c.feeCurrency,
+      recordsFile: c.recordsFile,
       now: c.now ?? Date.now,
       onRecord: c.onRecord ?? ((r) => console.log("[tildai] op", r.id, r.accion, r.resultado, r.txHash ?? r.error ?? "")),
       notify: c.notify ?? ((m) => console.error("[tildai] ALERTA", m)),
@@ -123,7 +125,7 @@ export class VaultOps {
   /** Reads usedOp first, simulates, then sends. Never throws: every outcome is recorded, and errors also notify. */
   private async run(id: string, accion: OpRecord["accion"], monto: bigint, plan: (used: boolean) => Promise<Plan>): Promise<OpRecord> {
     const opId = opIdOf(id);
-    const rec: OpRecord = { id, opId, accion, monto, destino: "?", resultado: "error", at: Date.now() };
+    const rec: OpRecord = { id, opId, vault: this.cfg.vault, accion, monto, destino: "?", resultado: "error", at: Date.now() };
     const { vault, wallet, reader, feeCurrency } = this.cfg;
     try {
       if (monto <= 0n) throw new Error("el monto tiene que ser mayor a 0");
@@ -159,11 +161,23 @@ export class VaultOps {
     return this.finish(rec);
   }
 
-  private finish(rec: OpRecord) {
+  private async finish(rec: OpRecord) {
     this.records.push(rec);
     this.cfg.onRecord(rec);
+    // Every money op leaves a durable record; a persistence or alert failure never changes the outcome.
+    if (this.cfg.recordsFile) {
+      try {
+        await appendJsonl(this.cfg.recordsFile, rec);
+      } catch (e) {
+        console.error("[tildai] ALERTA no pude persistir el registro de la operación", e);
+      }
+    }
     if (rec.resultado === "error") {
-      this.cfg.notify(`${rec.accion} ${formatPesos(rec.monto)} (${rec.id}) falló: ${rec.error}${rec.txHash ? ` [tx ${rec.txHash}]` : ""}`);
+      try {
+        await this.cfg.notify(`${rec.accion} ${formatPesos(rec.monto)} (${rec.id}) falló: ${rec.error}${rec.txHash ? ` [tx ${rec.txHash}]` : ""}`);
+      } catch (e) {
+        console.error("[tildai] ALERTA el aviso de la falla no salió", e);
+      }
     }
     return rec;
   }
