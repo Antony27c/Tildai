@@ -118,8 +118,9 @@
 
 .row {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
-  gap: var(--s3, 12px);
+  gap: var(--s1, 4px) var(--s3, 12px);
   padding: var(--s3, 12px) var(--s4, 16px);
 }
 
