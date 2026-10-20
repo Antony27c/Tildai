@@ -47,6 +47,15 @@ test("3 clientes seguidos del mismo vault: el pago firmado no da 429", async () 
   }
 });
 
+test("la API key del facilitador nunca aparece en las respuestas", async () => {
+  const u = await get(V1, "4.4.4.4", false);
+  const s = await get(V1, "4.4.4.4", true);
+  for (const r of [u, s]) {
+    const text = await r.text() + JSON.stringify(Object.fromEntries(r.headers));
+    assert.ok(!text.includes("x402_test"), "la key no sale en body ni headers");
+  }
+});
+
 test("los GET sin firma desde una IP se limitan; el firmado tiene cupo propio", async () => {
   for (let i = 0; i < 30; i++) assert.equal((await get(V2, "9.9.9.9", false)).status, 402);
   assert.equal((await get(V2, "9.9.9.9", false)).status, 429);

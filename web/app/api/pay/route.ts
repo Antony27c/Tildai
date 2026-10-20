@@ -63,7 +63,7 @@ export async function GET(request: Request) {
   }
 
   const facilitator = facilitatorFromEnv();
-  if (!facilitator) return json({ error: "El cobro con x402 no está habilitado" }, 503);
+  if (!facilitator) return json({ error: PAY_MSG.unavailable }, 503);
 
   if (!signature) {
     try {

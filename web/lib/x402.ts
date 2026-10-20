@@ -53,8 +53,16 @@ function buildClient(env: Record<string, string | undefined>): FacilitatorClient
   });
 }
 
+// La key solo viaja al facilitador como X-API-Key (verify/settle/supported); nunca al cliente.
+// https://x402.celo.org/skill.md — sin key el facilitador rechaza con 401 ("metering gate").
+let keyWarned = false;
 export function facilitatorFromEnv(env: Record<string, string | undefined> = process.env): FacilitatorClient | null {
-  return env === process.env ? (envFacilitator ??= buildClient(env)) : buildClient(env);
+  if (env !== process.env) return buildClient(env);
+  if (!env.X402_API_KEY && !keyWarned) {
+    keyWarned = true;
+    console.error("falta X402_API_KEY");
+  }
+  return (envFacilitator ??= buildClient(env));
 }
 
 async function requirementsFrom(server: x402ResourceServer, vault: string, amount: number): Promise<PaymentRequirements> {

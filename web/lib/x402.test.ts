@@ -97,6 +97,39 @@ test("el servidor se crea e inicializa una sola vez por facilitador", async () =
   assert.equal(inits, 1);
 });
 
+test("la API key viaja como X-API-Key al facilitador (supported, verify, settle)", async () => {
+  const sent: Record<string, string | null> = {};
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: any, init?: any) => {
+    const url = String(input instanceof Request ? input.url : input);
+    const key = new Headers(init?.headers).get("x-api-key");
+    if (url.endsWith("/supported")) {
+      sent.supported = key;
+      return Response.json({ kinds: [{ x402Version: 2, scheme: "exact", network: "eip155:42220" }], extensions: [], signers: {} });
+    }
+    if (url.endsWith("/verify")) {
+      sent.verify = key;
+      return Response.json({ isValid: true, payer: "0xPayer" });
+    }
+    if (url.endsWith("/settle")) {
+      sent.settle = key;
+      return Response.json({ success: true, transaction: "0xabc", network: "eip155:42220", payer: "0xPayer" });
+    }
+    throw new Error("fetch inesperado: " + url);
+  }) as typeof fetch;
+  try {
+    const f = facilitatorFromEnv({ X402_API_KEY: "x402_test_key" });
+    assert.ok(f);
+    const r = await payWithX402(vault, 8500.5, await payment(), f);
+    assert.equal(r.status, "paid");
+    assert.equal(sent.supported, "x402_test_key");
+    assert.equal(sent.verify, "x402_test_key");
+    assert.equal(sent.settle, "x402_test_key");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
 test("TILDAI_CHAIN_ID distinto de 42220 (o ausente): x402 rechazado sin tocar al facilitador", async () => {
   let called = false;
   const f = fake({ verify: async () => ((called = true), { isValid: true }) });
