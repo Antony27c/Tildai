@@ -1,0 +1,132 @@
+.shell {
+  max-width: 430px;
+  margin: 0 auto;
+  padding: var(--s6) var(--s4) var(--s6);
+  display: grid;
+  gap: var(--s5);
+}
+
+.brand {
+  margin: 0;
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--s1);
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.brandTick {
+  width: 0.62em;
+  height: 0.62em;
+  color: var(--accent);
+}
+
+.title {
+  margin: 0;
+  font-size: clamp(1.75rem, 5vw, 2.5rem);
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+.card {
+  padding: var(--s5);
+  background: var(--surface);
+  border-radius: var(--radius);
+  display: grid;
+  gap: var(--s4);
+}
+
+.row {
+  display: grid;
+  gap: var(--s3);
+  padding-top: var(--s4);
+  border-top: 1px dashed var(--border);
+}
+
+.amount {
+  font-variant-numeric: tabular-nums;
+  font-size: 1.4rem;
+  overflow-wrap: anywhere;
+}
+
+.btn {
+  appearance: none;
+  font: inherit;
+  font-size: 1.1rem;
+  font-weight: 700;
+  min-height: 52px;
+  padding: var(--s3) var(--s4);
+  border-radius: 999px;
+  border: 1.5px solid transparent;
+  background: var(--accent);
+  color: var(--accent-fg);
+  cursor: pointer;
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .btn {
+    transition: transform 0.08s ease, opacity 0.12s ease;
+  }
+
+  .btn:hover:not(:disabled) {
+    opacity: 0.9;
+    transform: translateY(-1px);
+  }
+
+  .btn:active:not(:disabled) {
+    transform: scale(0.98);
+  }
+}
+
+.text {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+}
+
+.link {
+  color: var(--accent);
+  overflow-wrap: anywhere;
+}
+
+.ok {
+  margin: 0;
+  font-weight: 600;
+  color: var(--ok);
+}
+
+.warn {
+  margin: 0;
+  font-weight: 600;
+  color: var(--warn);
+}
+
+.error {
+  margin: 0;
+  color: var(--danger);
+}
+
+.note {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.footer {
+  padding-top: var(--s3);
+  border-top: 1px dashed var(--border);
+  font-size: 0.75rem;
+  color: var(--muted);
+}
