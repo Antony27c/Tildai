@@ -36,10 +36,10 @@ Necesitás una billetera en el celular. Es donde vas a recibir la plata cuando l
    - Valora te da una frase de recuperación: unas palabras secretas para recuperar la billetera si perdés el celular. Anotalas en papel y guardalas bien. No se las pases a nadie, tampoco a Tildai.
 4. **Cuál conviene:** con Valora podés hacer que aparezcan los pesos digitales. Se agregan a mano desde "Importar token" ("Import Token"), y el equipo te pasa los datos. En MiniPay no confirmamos que se vean los pesos digitales: antes de elegirla, consultalo con el equipo.
 
-**Por qué tiene que ser una billetera tuya, donde vos firmás:**
+**Por qué tiene que ser una billetera tuya, donde vos firmás** (firmar = aprobar cada pago desde tu app):
 - Esa dirección es la dueña de tu caja. Es la única que puede sacar toda la plata.
 - **No se puede cambiar después.**
-- No uses la dirección para depositar en un exchange (Ripio, Binance, Lemon, etc.). Esa dirección no es tuya: no podrías sacar la plata de la caja.
+- No uses la dirección para depositar en una app de compraventa (Ripio, Binance, Lemon, etc.). Esa dirección no es tuya: no podrías sacar la plata de la caja.
 - No uses la dirección de otra persona ni la de Tildai.
 
 **Cómo copiar tu dirección:**
@@ -49,11 +49,11 @@ Necesitás una billetera en el celular. Es donde vas a recibir la plata cuando l
 
 ## 3. Darte de alta
 
-Hoy el alta es por invitación: solo entran los chats que habilita el equipo.
+Hoy el alta la hace el equipo junto con vos. [PRÓXIMA VERSIÓN] Va a ser por invitación: solo van a entrar los chats que habilite el equipo.
 
 1. El equipo te pasa el nombre del bot de Tildai en Telegram.
-2. Abrilo y escribile **por privado** (no en un grupo).
-3. Si te contesta *"El alta es por invitación y está cerrada para este chat"*, avisale al equipo que ya le escribiste. Ellos habilitan tu chat y te avisan.
+2. Abrilo y escribile. Mejor por privado que en un grupo, así no compartís tus datos con nadie más.
+3. [PRÓXIMA VERSIÓN] Si te contesta *"El alta es por invitación y está cerrada para este chat"*, avisale al equipo que ya le escribiste. Ellos habilitan tu chat y te avisan.
 4. Escribí `/start`.
 5. El bot te pide tu dirección. Pegá la dirección que copiaste (la que empieza con `0x`).
    - Si pegás por error una clave o tus palabras secretas, el bot no la lee y te pide que la borres. Borrala y, por las dudas, creá una billetera nueva.
@@ -74,7 +74,7 @@ Hoy el alta es por invitación: solo entran los chats que habilita el equipo.
 ## 4. Cobrar
 
 **El cartel del mostrador:**
-1. El equipo te pasa el link de tu cartel. Es la página `/cartel?vault=<tu caja>` y puede llevar el nombre de tu comercio.
+1. El equipo te pasa el link de tu cartel, con tu caja y el nombre de tu comercio (para el equipo: la página `/cartel` con tu caja).
 2. Abrilo y tocá "Imprimir". Pegá el cartel en el mostrador.
 3. El cartel dice: *"Pagá acá con pesos"*, con un QR y tres pasos para el cliente.
 
@@ -93,9 +93,9 @@ Hoy el alta es por invitación: solo entran los chats que habilita el equipo.
 - Si todavía no te llega el aviso solo, preguntale al bot *"¿me pagaron?"*. Te contesta, por ejemplo, *"✓ Entraron $ 8.500 (venta #3)"*.
 - [PRÓXIMA VERSIÓN] Tildai te va a avisar cada venta sin que preguntes: *"Entró una venta: $ 8.500 ✓"*. Si entra plata sin un cobro pedido (por ejemplo, del cartel), te dice *"Te llegó un pago de $ … sin venta asociada"*.
 
-## 5. El cierre de caja de la noche
+## 5. El cierre de caja de la noche [PRÓXIMA VERSIÓN]
 
-Todos los días a las **21 h** te llega un mensaje con:
+Hoy el cierre automático corre solo para la caja del equipo. El cierre por cada comercio está hecho pero todavía no está publicado. Cuando esté, todos los días a las **21 h** te llega un mensaje con:
 - El total del día.
 - Cuántas ventas hiciste.
 - El ticket promedio (cuánto gastó cada cliente, en promedio).
@@ -114,13 +114,13 @@ Todos los días a las **21 h** te llega un mensaje con:
 **A tu billetera** [PENDIENTE MAINNET]:
 1. Escribile al bot, por ejemplo, *"pasame 50.000"*.
 2. Tildai manda esa plata a **tu billetera**, la que pusiste en el alta. No la puede mandar a ningún otro lado.
-3. Sale de la plata del día, no de los sobres de ahorro e impuestos. Respeta tu tope diario.
+3. Sale de la plata libre de tu caja, no de los sobres de ahorro e impuestos. Respeta tu tope diario.
 4. Te contesta con un link de Ripio para pasar esa plata a pesos.
 
 **A tu cuenta del banco, con Ripio:**
 1. Abrí el link de Ripio que te dio Tildai.
 2. Seguí los pasos de Ripio. Vas a mandar los pesos digitales desde tu billetera y Ripio te los pasa a pesos en tu cuenta.
-3. Al mandar desde tu billetera, la red cobra una comisión muy chica. Tu billetera te la muestra antes de confirmar.
+3. **Para mandar desde tu billetera necesitás tener un poquito de dólares digitales (USD₮ o USDC) para pagar la comisión de la red: los pesos digitales no sirven para eso.** Son unos centavos y tu billetera te la muestra antes de confirmar. Pedile al equipo que te ayude a cargarlo la primera vez.
 4. Las condiciones del cambio las pone Ripio.
 
 **Siempre podés sacar todo:**
@@ -137,17 +137,18 @@ Todos los días a las **21 h** te llega un mensaje con:
 
 **El cliente dice que pagó y no me llegó el aviso. ¿Qué hago?**
 1. Preguntale al bot *"¿me pagaron?"*.
-2. [PRÓXIMA VERSIÓN] Pedile al cliente el número de operación que le muestra su billetera. Abrí `/comprobante?tx=<número>`. La página te dice si el pago a una caja de Tildai está "confirmado en la red" o "esperando confirmación".
-3. [PRÓXIMA VERSIÓN] Mirá tu panel del día (`/panel?vault=<tu caja>`). Ahí ves lo cobrado hoy y cada cobro con su hora.
+2. [PRÓXIMA VERSIÓN] Pedile al cliente el número de operación que le muestra su billetera y pasáselo al equipo. Te abren el comprobante, que dice si el pago a una caja de Tildai está "confirmado en la red" o "esperando confirmación" (para el equipo: la página `/comprobante` con el número de operación).
+3. [PRÓXIMA VERSIÓN] Pedile al equipo el link de tu panel del día (para el equipo: la página `/panel` con tu caja). Ahí ves lo cobrado hoy y cada cobro con su hora.
 4. Si el pago no aparece en ningún lado, no entregues la mercadería hasta que aparezca.
 
 **¿Y si pierdo el celular?**
-- **Tu caja no se pierde.** La plata sigue en tu caja.
 - **Lo que importa es tu billetera.** Para recuperarla necesitás el respaldo:
   - En MiniPay, tu cuenta de Google.
   - En Valora, tu frase de recuperación.
-- **Sin ese respaldo, nadie puede recuperar tu billetera: ni nosotros, ni Tildai.** Como tu billetera es la dueña de la caja, cuidá ese respaldo como cuidás la llave del local.
-- Mientras tanto, Tildai puede seguir cobrando y avisándote en Telegram, si recuperás tu cuenta de Telegram.
+- Cuidá el respaldo como la llave del local: la frase anotada en papel, en un lugar seguro, y si podés otra copia en otro lugar. **Nunca se la pases a nadie: ni a Tildai, ni al equipo, ni a alguien que diga ser soporte. Nadie te la va a pedir.**
+- **Si perdés el celular y no tenés el respaldo, la plata de tu caja queda trabada: no la puede sacar nadie, ni vos, ni nosotros.** Los retiros de la caja van siempre a esa billetera.
+- Mientras no la recuperes, **no le pidas a Tildai que te pase plata**: la mandaría a una billetera que ya no controlás.
+- Con el respaldo, instalás la app en otro celular, recuperás la billetera y seguís como antes. La plata de tu caja sigue ahí, y Tildai puede seguir cobrando y avisándote en Telegram si recuperás tu cuenta.
 
 **¿Tildai puede sacarme la plata?**
 No. Solo puede mandarla a tu billetera, separarla dentro de tu caja o pasarla a dólares con los límites que viste en el alta. Todo con tope diario.
