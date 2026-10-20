@@ -45,9 +45,10 @@ async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> 
   return body as Record<string, unknown>;
 }
 
-const pview = (p: Payment) => ({ id: p.id, from: p.from, amount: p.amount.toString(), txHash: p.txHash, timestamp: p.timestamp ?? null, ...(p.saleId && { saleId: p.saleId }) });
+const pview = (p: Payment) => ({ id: p.id, from: p.from, amount: p.amount.toString(), txHash: p.txHash, timestamp: p.timestamp ?? null, ...(p.timestampUnavailable && { timestampUnavailable: true }), ...(p.saleId && { saleId: p.saleId }) });
 
-const view = (s: Sale) => ({ id: s.id, vault: s.vault, amount: s.amount.toString(), status: s.status, ...(s.txHash && { txHash: s.txHash }) });
+// txHash queda por compatibilidad como el último informado; la lista completa es txHashes.
+const view = (s: Sale) => ({ id: s.id, vault: s.vault, amount: s.amount.toString(), status: s.status, txHashes: s.txHashes, ...(s.txHashes.length && { txHash: s.txHashes.at(-1) }) });
 
 const intParam = (url: URL, name: string, def: number) => {
   const v = url.searchParams.get(name);
@@ -77,7 +78,7 @@ const arDay = (ms: number) => new Date(ms + AR).toISOString().slice(0, 10);
 
 // Métricas para la entrega. Un pago sin timestamp cuenta en los totales pero no en
 // byDay ni en activeVaults7d: ubicarlo en un día sería inventar la fecha.
-export function stats(store: Store, now = Date.now()) {
+export function stats(store: Store, chainId: number, now = Date.now()) {
   const days = new Map<string, { payments: number; warsReceived: bigint }>();
   for (let i = 13; i >= 0; i--) days.set(arDay(now - i * DAY), { payments: 0, warsReceived: 0n });
   const active = new Set<string>();
@@ -89,7 +90,7 @@ export function stats(store: Store, now = Date.now()) {
       paymentsWithoutTimestamp++;
       continue;
     }
-    if (p.timestamp >= now - 7 * DAY) active.add(p.vault);
+    if (arDay(p.timestamp) >= arDay(now - 6 * DAY)) active.add(p.vault); // 7 días calendario AR, como byDay
     const d = days.get(arDay(p.timestamp));
     if (d) {
       d.payments++;
@@ -99,6 +100,7 @@ export function stats(store: Store, now = Date.now()) {
   let salesCobradas = 0;
   for (const s of store.sales.values()) if (s.status === 'cobrada') salesCobradas++;
   return {
+    chainId,
     vaults: store.vaults.size,
     activeVaults7d: active.size,
     payments: store.payments.size,
@@ -110,7 +112,7 @@ export function stats(store: Store, now = Date.now()) {
   };
 }
 
-export function createApp(o: { indexer: Indexer; store: Store; token: string; onError?: (e: unknown) => void }): Server {
+export function createApp(o: { indexer: Indexer; store: Store; token: string; chainId: number; onError?: (e: unknown) => void }): Server {
   const { indexer, store } = o;
   const log = o.onError ?? ((e: unknown) => console.error('server:', e));
 
@@ -160,12 +162,13 @@ export function createApp(o: { indexer: Indexer; store: Store; token: string; on
       const vault = vaultParam(url);
       const [since, until] = range(url);
       const list = [...store.payments.values()].filter((p) => p.vault === vault);
-      // Si falta algún timestamp el rango no es confiable: 503 para que el agente reintente, nunca una respuesta a medias.
-      // Con rango y pagos sin timestamp la respuesta no es confiable: 503 para reintentar. Sin rango, se incluyen con timestamp null.
-      if ((url.searchParams.has('since') || url.searchParams.has('until')) && list.some((p) => p.timestamp == null)) {
+      const ranged = url.searchParams.has('since') || url.searchParams.has('until');
+      // Con rango: 503 solo si hay pagos esperando fecha por un error transitorio (reintentar); los marcados
+      // timestampUnavailable (bloque podado, permanente) se excluyen y la respuesta es 200. Sin rango, se incluyen con timestamp null.
+      if (ranged && list.some((p) => p.timestamp == null && !p.timestampUnavailable)) {
         throw new HttpError(503, 'hay pagos sin timestamp todavía, reintenta');
       }
-      return send(res, 200, list.filter((p) => p.timestamp == null || (p.timestamp >= since && p.timestamp < until)).sort((a, b) => Number(a.block - b.block)).map(pview));
+      return send(res, 200, list.filter((p) => (p.timestamp == null ? !ranged : p.timestamp >= since && p.timestamp < until)).sort((a, b) => Number(a.block - b.block)).map(pview));
     }
     if (key === 'GET /events') {
       const since = intParam(url, 'since', 0);
@@ -175,7 +178,7 @@ export function createApp(o: { indexer: Indexer; store: Store; token: string; on
       // El cursor es el seq del último evento devuelto: con más de 500, el agente sigue desde ahí y no se saltea.
       return send(res, 200, { events: list, cursor: list.at(-1)?.seq ?? since });
     }
-    if (key === 'GET /stats') return send(res, 200, stats(store));
+    if (key === 'GET /stats') return send(res, 200, stats(store, o.chainId));
     throw new HttpError(404, 'ruta inexistente');
   }
 
