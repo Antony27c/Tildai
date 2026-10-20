@@ -88,19 +88,32 @@ Si se agregan, misma regla: colección abierta, crédito en el footer, caption h
 
 ## Marca
 
-Los assets de marca viven en las convenciones de Next (`app/`), que los sirve solas.
-**El logo definitivo se está generando:** cuando llegue, alcanza con reemplazar los
-archivos, sin tocar código ni `layout.tsx`.
+El ícono de marca es el **ticket blanco con borde rasgado y tilde**, redibujado a mano
+en SVG según la hoja de marca (la hoja fuente no se commitea). Fuente única en
+`public/brand/`; de ahí salen los assets que sirve Next:
 
-| Archivo | Qué es | Reemplazo |
+| Archivo | Qué es |
+|---|---|
+| `public/brand/icon-green-square.svg` | Ticket + tilde sobre cuadrado redondeado `--accent` (viewBox 512). |
+| `public/brand/icon-green-circle.svg` | Ídem sobre círculo `--accent`. Base del avatar. |
+| `public/brand/icon-ink-square.svg` | Ídem sobre cuadrado redondeado `--fg`. |
+| `public/brand/favicon.svg` | Tilde verde sola en círculo `--bg` (viewBox 64), legible a 16px. |
+| `public/brand/telegram-avatar.png` | Avatar del bot 640×640, rasterizado del ícono circular. |
+
+Los assets servidos por Next (convenciones de `app/`):
+
+| Archivo | Qué es | Origen |
 |---|---|---|
-| `app/icon.svg` | Favicon (tilde blanca sobre verde `--accent`). | `app/icon.svg` o `icon.png` del logo final. |
-| `app/apple-icon.png` | Ícono iOS 180×180, cuadrado pleno (iOS le pone la máscara). | PNG 180×180 del logo final, fondo pleno. |
-| `app/opengraph-image.tsx` | Imagen OG 1200×630 generada con `next/og`: fondo `--bg`, wordmark en `--fg` + tilde `--accent`. | Regenerar con el logo, o reemplazar por `opengraph-image.png` estático. |
+| `app/icon.svg` | Favicon. | Copia de `public/brand/favicon.svg`. |
+| `app/apple-icon.png` | Ícono iOS 180×180, verde a sangre (iOS le pone la máscara). | Raster de `icon-green-square.svg`. |
+| `app/opengraph-image.tsx` | Imagen OG 1200×630 con `next/og`: fondo `--bg`, "tildai" en `--fg` + tilde `--accent` + ícono del ticket. | Misma geometría que `icon-green-square.svg`, inline. |
 | `public/img/*.jpg` | Fotos del mundo del comercio (CC BY-SA, crédito en el footer). | Agregar/reemplazar manteniendo crédito y caption honesta. |
 
-El wordmark de la barra y el footer ("Tildai" + tilde SVG de `cobro/Tick.tsx`) es texto,
-no imagen: si el logo final trae lettering propio, se actualiza en `Landing.tsx`.
+**Wordmark pendiente:** el wordmark de letra-de-mano de la hoja NO se redibuja; llegarán
+`wordmark.png` y `wordmark-blanco.png` en alta. Cuando lleguen se enchufan en:
+el brand de la barra y footer de `Landing.tsx` (hoy "Tildai" es texto + tilde SVG de
+`cobro/Tick.tsx`), la imagen OG (reemplazar el "tildai" tipográfico) y la versión
+blanca donde haga falta sobre `--accent`/`--fg`. Hasta entonces se usa el texto.
 
 ## Voz
 
