@@ -106,7 +106,7 @@ Los assets servidos por Next (convenciones de `app/`):
 |---|---|---|
 | `app/icon.svg` | Favicon. | Copia de `public/brand/favicon.svg`. |
 | `app/apple-icon.png` | Ícono iOS 180×180, verde a sangre (iOS le pone la máscara). | Raster de `icon-green-square.svg`. |
-| `app/opengraph-image.tsx` | Imagen OG 1200×630 con `next/og`: fondo `--bg`, "tildai" en `--fg` + tilde `--accent` + ícono del ticket. | Misma geometría que `icon-green-square.svg`, inline. |
+| `app/opengraph-image.tsx` | Imagen OG 1200×630 con `next/og`: fondo `--bg`, "tildai" en `--fg` + ícono del ticket (una sola tilde, la del ícono). | Misma geometría que `icon-green-square.svg`, inline. |
 | `public/img/*.jpg` | Fotos del mundo del comercio (CC BY-SA, crédito en el footer). | Agregar/reemplazar manteniendo crédito y caption honesta. |
 
 **Wordmark pendiente:** el wordmark de letra-de-mano de la hoja NO se redibuja; llegarán

@@ -149,6 +149,62 @@ test("error transitorio: reintenta con backoff y tras el tope salta el evento co
   assert.deepEqual(sent, ["Entró una venta: $200 ✓"]);
 });
 
+// El error real de sendTelegramMessage de eve es un Error sin .status: el código va dentro del mensaje
+// ("Telegram sendMessage failed with HTTP 403: ..."). La clasificación lo lee de ahí.
+test("Telegram 403 estilo eve (HTTP en el mensaje): chat inactivo + ALERTA + el cursor sigue", async () => {
+  const pa = pago("pa", 100);
+  const pb = pago("pb", 200);
+  const { indexer } = fakeIndexer({
+    events: [ev(1, "venta_cobrada", pa), ev(2, "venta_cobrada", pb)],
+    payments: new Map([[V1.toLowerCase(), [pa]], [V2.toLowerCase(), [pb]]]),
+  });
+  const cursor = EventCursor.load(undefined);
+  const sent: string[] = [];
+  const errores: string[] = [];
+  const orig = console.error;
+  console.error = (...a: unknown[]) => errores.push(String(a[0]));
+  const send = async (c: string, t: string) => {
+    // Descripción sin frase conocida: solo el "HTTP 403" del mensaje lo marca permanente.
+    if (c === "A") throw new Error("Telegram sendMessage failed with HTTP 403: Forbidden");
+    sent.push(t);
+  };
+  try {
+    for (let i = 0; i < 3; i++) {
+      await avisarEventos({ indexer, cursor, vaults: [{ chatId: "A", vault: V1 }, { chatId: "B", vault: V2 }], send }).catch(() => {});
+    }
+  } finally {
+    console.error = orig;
+  }
+  assert.equal(cursor.chatInactivo("A"), true);
+  assert.equal(sent.length, 1, "el comercio B recibió su aviso a pesar del 403 de A");
+  assert.equal(cursor.cursor, 2);
+  assert.ok(errores.some((e) => /ALERTA.*chat A/.test(e)), "la desactivación del chat no se logueó como ALERTA");
+});
+
+test("Telegram 429 y 5xx: transitorio — el cursor no avanza y el próximo tick reintenta", async () => {
+  const pa = pago("pa", 100);
+  const { indexer } = fakeIndexer({ events: [ev(1, "venta_cobrada", pa)], payments: new Map([[V1.toLowerCase(), [pa]]]) });
+  const cursor = EventCursor.load(undefined);
+  const vaults = [{ chatId: "A", vault: V1 }];
+  const sent: string[] = [];
+  let t = 0;
+  let fallar: unknown = new Error("Telegram sendMessage failed with HTTP 429: Too Many Requests");
+  const send = async (_c: string, txt: string) => {
+    if (fallar) throw fallar;
+    sent.push(txt);
+  };
+  await assert.rejects(() => avisarEventos({ indexer, cursor, vaults, send, now: () => t }), /HTTP 429/);
+  assert.equal(cursor.cursor, 0);
+  fallar = Object.assign(new Error("telegram 503"), { status: 503 });
+  await assert.rejects(() => avisarEventos({ indexer, cursor, vaults, send, now: () => t }), /503/);
+  assert.equal(cursor.cursor, 0);
+  fallar = undefined;
+  t = 61_000; // pasó el backoff: el próximo tick reintenta el mismo evento
+  await avisarEventos({ indexer, cursor, vaults, send, now: () => t });
+  assert.deepEqual(sent, ["Entró una venta: $100 ✓"]);
+  assert.equal(cursor.cursor, 1);
+});
+
 test("rangoDia: bordes de medianoche AR", () => {
   const t = Date.UTC(2026, 9, 19, 3);
   const r = rangoDia(dayIndex(t));
