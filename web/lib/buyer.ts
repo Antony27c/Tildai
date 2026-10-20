@@ -12,8 +12,15 @@ type Reader = { readContract: (args: any) => Promise<bigint> };
 const erc20 = parseAbi(["function balanceOf(address) view returns (uint256)"]);
 const celoReader = () => createPublicClient({ chain: celo, transport: http() }) as unknown as Reader;
 
+// shortcut: MiniPay no soporta message signing y el cobro x402 firma un permit Permit2 con
+// eth_signTypedData_v4, así que dentro de MiniPay solo queda "Pagar con pesos".
+// https://raw.githubusercontent.com/celo-org/agent-skills/main/skills/minipay-integration/SKILL.md ("Not Supported: Message signing")
+export function isMiniPay(ethereum: unknown): boolean {
+  return typeof ethereum === "object" && ethereum !== null && (ethereum as { isMiniPay?: unknown }).isMiniPay === true;
+}
+
 export async function checkWarsWallet(ethereum: unknown, amount?: number, pc: Reader = celoReader()): Promise<WalletCheck> {
-  if (!hasWallet(ethereum)) return "no_wallet";
+  if (!hasWallet(ethereum) || isMiniPay(ethereum)) return "no_wallet";
   try {
     const accounts = await (ethereum as EIP1193Provider).request({ method: "eth_accounts" });
     if (!accounts?.length) return "no_accounts";
@@ -58,7 +65,7 @@ export async function payWithWars(
   sale: string | null,
   deps: { payFetch?: (url: string) => Promise<{ status: number; json: () => Promise<any> }> } = {},
 ): Promise<PayOutcome> {
-  if (!hasWallet(ethereum)) return { ok: false, reason: GENERIC };
+  if (!hasWallet(ethereum) || isMiniPay(ethereum)) return { ok: false, reason: GENERIC };
   try {
     const provider = ethereum as EIP1193Provider;
     const walletClient = createWalletClient({ chain: celo, transport: custom(provider) });
