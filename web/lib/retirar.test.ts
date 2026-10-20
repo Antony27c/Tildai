@@ -6,6 +6,7 @@ import { fromDataSuffix, withAttribution } from "@celo/attribution-tags";
 import { ATTRIBUTION_CODE, formatToken, GAS_MESSAGE, isOwner, loadVault, refreshBalances, vaultAbi, withdrawAll } from "./retirar.ts";
 
 const VAULT = `0x${"11".repeat(20)}` as Address;
+const NOT_VAULT = `0x${"66".repeat(20)}` as Address;
 const OWNER = `0x${"22".repeat(20)}` as Address;
 const OTHER = `0x${"33".repeat(20)}` as Address;
 const WARS_SEP = "0x7fd80e16929eac12833c6e214b00efd43ad20e49";
@@ -79,8 +80,9 @@ test("loadVault: vault real devuelve owner y saldos de wARS y USD₮", async () 
 });
 
 test("loadVault: no es vault de la factory → invalid, también con TILDAI_DEMO=1", async () => {
-  assert.equal((await loadVault(VAULT, SEPOLIA, reader({ isVault: false }))).kind, "invalid");
-  assert.equal((await loadVault(VAULT, { ...SEPOLIA, TILDAI_DEMO: "1" }, reader({ isVault: false }))).kind, "invalid");
+  // checkVault cachea los "ok" por dirección: este caso usa una dirección que nunca dio ok.
+  assert.equal((await loadVault(NOT_VAULT, SEPOLIA, reader({ isVault: false }))).kind, "invalid");
+  assert.equal((await loadVault(NOT_VAULT, { ...SEPOLIA, TILDAI_DEMO: "1" }, reader({ isVault: false }))).kind, "invalid");
 });
 
 test("loadVault: RPC caído o red sin configurar → error / no_network", async () => {

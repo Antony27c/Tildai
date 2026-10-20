@@ -1,5 +1,6 @@
 import { loadVault } from "../../lib/retirar.ts";
 import { networkName } from "../../lib/stats.ts";
+import Tick from "../cobro/Tick.tsx";
 import RetirarClient from "./RetirarClient.tsx";
 import styles from "./retirar.module.css";
 
@@ -18,16 +19,22 @@ export default async function RetirarPage({ searchParams }: { searchParams: Prom
   const r = await loadVault(vault);
   if (r.kind !== "ok") {
     return (
-      <main className={styles.main}>
-        <p className={styles.brand}>Tildai ✓</p>
+      <main className={styles.shell}>
+        <p className={styles.brand}>
+          Tildai
+          <Tick className={styles.brandTick} />
+        </p>
         <h1 className={styles.title}>Retirar de tu caja</h1>
         <p className={styles.error}>{MENSAJES[r.kind]}</p>
       </main>
     );
   }
   return (
-    <main className={styles.main}>
-      <p className={styles.brand}>Tildai ✓</p>
+    <main className={styles.shell}>
+      <p className={styles.brand}>
+        Tildai
+        <Tick className={styles.brandTick} />
+      </p>
       <h1 className={styles.title}>Retirar de tu caja</h1>
       <RetirarClient vault={String(vault)} chainId={r.chainId} owner={r.owner} tokens={r.tokens} scan={r.scan} />
       <p className={styles.note}>La plata va a tu billetera conectada y solo vos podés firmar el retiro.</p>
