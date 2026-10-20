@@ -12,8 +12,15 @@ type Reader = { readContract: (args: any) => Promise<bigint> };
 const erc20 = parseAbi(["function balanceOf(address) view returns (uint256)"]);
 const celoReader = () => createPublicClient({ chain: celo, transport: http() }) as unknown as Reader;
 
+// shortcut: MiniPay no soporta message signing y el cobro x402 firma un permit Permit2 con
+// eth_signTypedData_v4, así que dentro de MiniPay solo queda "Pagar con pesos".
+// https://raw.githubusercontent.com/celo-org/agent-skills/main/skills/minipay-integration/SKILL.md ("Not Supported: Message signing")
+export function isMiniPay(ethereum: unknown): boolean {
+  return typeof ethereum === "object" && ethereum !== null && (ethereum as { isMiniPay?: unknown }).isMiniPay === true;
+}
+
 export async function checkWarsWallet(ethereum: unknown, amount?: number, pc: Reader = celoReader()): Promise<WalletCheck> {
-  if (!hasWallet(ethereum)) return "no_wallet";
+  if (!hasWallet(ethereum) || isMiniPay(ethereum)) return "no_wallet";
   try {
     const accounts = await (ethereum as EIP1193Provider).request({ method: "eth_accounts" });
     if (!accounts?.length) return "no_accounts";
@@ -39,13 +46,14 @@ async function ensureCelo(provider: EIP1193Provider) {
   }
 }
 
-// 402 que vale reintentar (p. ej. carrera de nonce del permit); si el settle quedó indeterminado, NO reintentar
-export function retriable(status: number, error?: string): boolean {
-  return status === 402 && !/onchain|verific|confirm/i.test(error ?? "");
+// Solo se reintenta un pago que el servidor rechazó como "invalid" (p. ej. carrera de nonce del permit).
+// Con otro código —y sobre todo "indeterminate"— la plata pudo haberse movido: NO reintentar.
+export function retriable(status: number, code?: string): boolean {
+  return status === 402 && code === "invalid";
 }
 
-export function readPayResponse(status: number, body: { txHash?: string; error?: string }): PayOutcome {
-  if (status !== 200) return { ok: false, reason: mapPayError(new Error(body.error ?? `HTTP ${status}`)) };
+export function readPayResponse(status: number, body: { txHash?: string; error?: string; code?: string }): PayOutcome {
+  if (status !== 200) return { ok: false, reason: mapPayError(body.code ?? new Error(body.error ?? `HTTP ${status}`)) };
   // 200 sin txHash: la liquidación pudo ocurrir igual; jamás decir "no se te debitó nada"
   return body.txHash ? { ok: true, txHash: body.txHash } : { ok: true, pending: true };
 }
@@ -57,7 +65,7 @@ export async function payWithWars(
   sale: string | null,
   deps: { payFetch?: (url: string) => Promise<{ status: number; json: () => Promise<any> }> } = {},
 ): Promise<PayOutcome> {
-  if (!hasWallet(ethereum)) return { ok: false, reason: GENERIC };
+  if (!hasWallet(ethereum) || isMiniPay(ethereum)) return { ok: false, reason: GENERIC };
   try {
     const provider = ethereum as EIP1193Provider;
     const walletClient = createWalletClient({ chain: celo, transport: custom(provider) });
@@ -80,10 +88,10 @@ export async function payWithWars(
     }
 
     let res = await payFetch(payUrl(vault, amount, sale));
-    let body = (await res.json().catch(() => ({}))) as { txHash?: string; error?: string };
-    if (retriable(res.status, body.error)) {
+    let body = (await res.json().catch(() => ({}))) as { txHash?: string; error?: string; code?: string };
+    if (retriable(res.status, body.code)) {
       res = await payFetch(payUrl(vault, amount, sale));
-      body = (await res.json().catch(() => ({}))) as { txHash?: string; error?: string };
+      body = (await res.json().catch(() => ({}))) as { txHash?: string; error?: string; code?: string };
     }
     return readPayResponse(res.status, body);
   } catch (e) {

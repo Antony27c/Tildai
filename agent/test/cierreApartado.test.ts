@@ -3,7 +3,8 @@ import { test } from "node:test";
 
 import { parseUnits, type Address, type Hex } from "viem";
 
-import { apartadoCierre, parsePcts } from "../src/cierreApartado.ts";
+import { apartadoCierre, cierreDeTodos, parsePcts } from "../src/cierreApartado.ts";
+import type { Indexer } from "../src/indexerClient.ts";
 import { pesosToWei } from "../src/money.ts";
 import { SalesBook } from "../src/sales.ts";
 import { FakeVault } from "../src/vault.ts";
@@ -137,6 +138,182 @@ test("error de escritura: avisa, registra, corta y no reintenta", async () => {
   assert.equal(c.alerts.length, 1);
   assert.match(r.texto, /NO se pudo apartar \(IsPaused\)/);
   assert.match(r.texto, /Corté acá/);
+});
+
+test("cierre general: un cierre por vault a su chat; una falla no frena a los demás", async () => {
+  const V1 = "0x00000000000000000000000000000000000000a1" as Address;
+  const V2 = "0x00000000000000000000000000000000000000a2" as Address;
+  const V3 = "0x00000000000000000000000000000000000000a3" as Address;
+  // Un chain por vault: usedOp es por contrato, la idempotencia no se mezcla entre comercios.
+  const chains = new Map<string, ReturnType<typeof chain>>();
+  const opsDe = (address: Address) => {
+    let ch = chains.get(address);
+    if (!ch) chains.set(address, (ch = chain()));
+    return ch.ops;
+  };
+  const sent: { chatId: string; texto: string }[] = [];
+  const orig = console.error;
+  console.error = () => {};
+  try {
+    await cierreDeTodos({
+      jobs: [
+        { chatId: "c1", vault: { address: V1, fromBlock: 0n } },
+        { chatId: "c2", vault: { address: V2, fromBlock: 0n } },
+        { chatId: "c3", vault: { address: V3, fromBlock: 0n } },
+      ],
+      datos: (v) => {
+        if (v.address === V2) throw new Error("vault roto");
+        return { book: bookWith(1000), balances: bal(pesosToWei(1000)) };
+      },
+      ops: opsDe,
+      env,
+      send: (chatId, texto) => sent.push({ chatId, texto }),
+    });
+  } finally {
+    console.error = orig;
+  }
+  assert.equal(sent.length, 3);
+  assert.equal(sent[0].chatId, "c1");
+  assert.match(sent[0].texto, /Cierre de caja/);
+  assert.match(sent[0].texto, /ahorro: \$100 apartados/);
+  assert.equal(sent[1].chatId, "c2");
+  assert.match(sent[1].texto, /cierre de caja de hoy falló.*vault roto/);
+  assert.equal(sent[2].chatId, "c3");
+  assert.match(sent[2].texto, /Cierre de caja/);
+  assert.equal(chains.get(V1)!.writes.length, 2); // ahorro + impuestos
+  assert.equal(chains.get(V2), undefined); // el vault roto nunca llegó a escribir
+  assert.equal(chains.get(V3)!.writes.length, 2);
+});
+
+test("indexer caído o 503: ese cierre avisa pendiente y no aparta; los demás siguen", async () => {
+  const V1 = "0x00000000000000000000000000000000000000a1" as Address;
+  const V2 = "0x00000000000000000000000000000000000000a2" as Address;
+  const chains = new Map<string, ReturnType<typeof chain>>();
+  const opsDe = (address: Address) => {
+    let ch = chains.get(address);
+    if (!ch) chains.set(address, (ch = chain()));
+    return ch.ops;
+  };
+  const indexer: Indexer = {
+    eventosDesde: async () => ({ events: [], cursor: 0 }),
+    pagosDelVault: async (vault) => {
+      if (vault === V2.toLowerCase()) throw Object.assign(new Error("hay pagos sin timestamp todavía, reintenta"), { status: 503 });
+      return [];
+    },
+  };
+  const sent: { chatId: string; texto: string }[] = [];
+  const orig = console.error;
+  console.error = () => {};
+  try {
+    await cierreDeTodos({
+      jobs: [
+        { chatId: "c2", vault: { address: V2, fromBlock: 0n } }, // el del 503 primero: no frena al otro
+        { chatId: "c1", vault: { address: V1, fromBlock: 0n } },
+      ],
+      datos: () => ({ book: bookWith(1000), balances: bal(pesosToWei(1000)) }),
+      ops: opsDe,
+      env,
+      send: (chatId, texto) => sent.push({ chatId, texto }),
+      indexer,
+    });
+  } finally {
+    console.error = orig;
+  }
+  assert.equal(sent.length, 2);
+  assert.equal(sent[0].chatId, "c2");
+  assert.match(sent[0].texto, /pendiente.*[Nn]o aparté nada/);
+  assert.equal(chains.get(V2), undefined); // jamás llegó a las escrituras
+  assert.equal(sent[1].chatId, "c1");
+  assert.match(sent[1].texto, /Cierre de caja/);
+  assert.equal(chains.get(V1)!.writes.length, 2);
+});
+
+test("el envío a Telegram se espera: un rechazo se observa, se avisa y los demás siguen", async () => {
+  const V1 = "0x00000000000000000000000000000000000000a1" as Address;
+  const V2 = "0x00000000000000000000000000000000000000a2" as Address;
+  const sent: { chatId: string; texto: string }[] = [];
+  const orig = console.error;
+  const errores: string[] = [];
+  console.error = (...a: unknown[]) => errores.push(String(a[0]));
+  try {
+    await cierreDeTodos({
+      jobs: [
+        { chatId: "c1", vault: { address: V1, fromBlock: 0n } },
+        { chatId: "c2", vault: { address: V2, fromBlock: 0n } },
+      ],
+      datos: () => ({ book: bookWith(1000), balances: bal(pesosToWei(1000)) }),
+      ops: () => chain().ops,
+      env,
+      // Como el send del schedule: devuelve la promesa y la espera, así el rechazo llega acá.
+      send: async (chatId, texto) => {
+        if (chatId === "c1" && !/falló/.test(texto)) throw new Error("telegram 500");
+        sent.push({ chatId, texto });
+      },
+    });
+  } finally {
+    console.error = orig;
+  }
+  // Si el send no se esperara (solo waitUntil), el rechazo sería invisible y nunca saldría el aviso de fallback.
+  assert.equal(sent.length, 2);
+  assert.equal(sent[0].chatId, "c1");
+  assert.match(sent[0].texto, /cierre de caja de hoy falló.*telegram 500/);
+  assert.equal(sent[1].chatId, "c2");
+  assert.match(sent[1].texto, /Cierre de caja/);
+  assert.ok(errores.some((e) => /c1.*telegram 500/.test(e)));
+});
+
+test("si también falla el aviso del fallo: se registra y sigue con el próximo vault", async () => {
+  const V1 = "0x00000000000000000000000000000000000000a1" as Address;
+  const V2 = "0x00000000000000000000000000000000000000a2" as Address;
+  const sent: { chatId: string; texto: string }[] = [];
+  const orig = console.error;
+  console.error = () => {};
+  try {
+    await cierreDeTodos({
+      jobs: [
+        { chatId: "c1", vault: { address: V1, fromBlock: 0n } },
+        { chatId: "c2", vault: { address: V2, fromBlock: 0n } },
+      ],
+      datos: () => ({ book: bookWith(1000), balances: bal(pesosToWei(1000)) }),
+      ops: () => chain().ops,
+      env,
+      send: async (chatId, texto) => {
+        if (chatId === "c1") throw new Error("telegram caído del todo");
+        sent.push({ chatId, texto });
+      },
+    });
+  } finally {
+    console.error = orig;
+  }
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].chatId, "c2");
+  assert.match(sent[0].texto, /Cierre de caja/);
+});
+
+test("si las ventas del día no se pudieron verificar, el cierre no aparta", async () => {
+  const V1 = "0x00000000000000000000000000000000000000a1" as Address;
+  const c = chain();
+  const book = bookWith(1000);
+  book.vault.transfers = async () => {
+    throw new Error("indexer caído");
+  };
+  const sent: { chatId: string; texto: string }[] = [];
+  const orig = console.error;
+  console.error = () => {};
+  try {
+    await cierreDeTodos({
+      jobs: [{ chatId: "c1", vault: { address: V1, fromBlock: 0n } }],
+      datos: () => ({ book, balances: bal(pesosToWei(1000)) }),
+      ops: () => c.ops,
+      env,
+      send: (chatId, texto) => sent.push({ chatId, texto }),
+    });
+  } finally {
+    console.error = orig;
+  }
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].texto, /No aparté nada.*no se pudieron verificar/);
+  assert.equal(c.writes.length, 0);
 });
 
 test("mainnet: la escritura lleva feeCurrency (adapter de USD₮); sin feeCurrency en Sepolia", async () => {

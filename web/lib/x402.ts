@@ -3,11 +3,11 @@ import type { FacilitatorClient } from "@x402/core/server";
 import type { PaymentPayload, PaymentRequirements } from "@x402/core/types";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
 import { getAddress, isAddress, parseUnits } from "viem";
-import { NETWORK, WARS } from "./wars.ts";
+import { NETWORK, WARS, type PayCode } from "./wars.ts";
 
 export type X402Result =
   | { status: "paid"; txHash: string; payer?: string }
-  | { status: "rejected"; reason: string };
+  | { status: "rejected"; code: PayCode };
 
 export { NETWORK, WARS };
 export const FACILITATOR_URL = "https://api.x402.celo.org";
@@ -23,20 +23,43 @@ function makeServer(facilitator: FacilitatorClient) {
   return new x402ResourceServer(facilitator).register("eip155:*", new ExactEvmScheme());
 }
 
-export function facilitatorFromEnv(env: Record<string, string | undefined> = process.env): FacilitatorClient | null {
+// El facilitador y el servidor se crean una sola vez por proceso: initialize() es un GET /supported con nuestra key.
+let envFacilitator: FacilitatorClient | null | undefined;
+const servers = new WeakMap<FacilitatorClient, Promise<x402ResourceServer>>();
+
+function sharedServer(facilitator: FacilitatorClient): Promise<x402ResourceServer> {
+  let p = servers.get(facilitator);
+  if (!p) {
+    const s = makeServer(facilitator);
+    p = s.initialize().then(
+      () => s,
+      (e) => {
+        servers.delete(facilitator);
+        throw e;
+      },
+    );
+    servers.set(facilitator, p);
+  }
+  return p;
+}
+
+function buildClient(env: Record<string, string | undefined>): FacilitatorClient | null {
   const key = env.X402_API_KEY;
   if (!key) return null;
   const headers = { "X-API-Key": key };
   return new HTTPFacilitatorClient({
-    url: env.X402_FACILITATOR_URL || FACILITATOR_URL,
+    url: FACILITATOR_URL,
     createAuthHeaders: async () => ({ verify: headers, settle: headers, supported: headers }),
   });
 }
 
-export async function buildRequirements(server: x402ResourceServer, vault: string, amount: number): Promise<PaymentRequirements> {
+export function facilitatorFromEnv(env: Record<string, string | undefined> = process.env): FacilitatorClient | null {
+  return env === process.env ? (envFacilitator ??= buildClient(env)) : buildClient(env);
+}
+
+async function requirementsFrom(server: x402ResourceServer, vault: string, amount: number): Promise<PaymentRequirements> {
   if (!isAddress(vault)) throw new Error("Vault inválido");
   if (!Number.isFinite(amount) || amount <= 0) throw new Error("Monto inválido");
-  await server.initialize();
   const [req] = await server.buildPaymentRequirementsFromOptions(
     [
       {
@@ -55,9 +78,14 @@ export async function buildRequirements(server: x402ResourceServer, vault: strin
   return req;
 }
 
+export async function buildRequirements(server: x402ResourceServer, vault: string, amount: number): Promise<PaymentRequirements> {
+  await server.initialize();
+  return requirementsFrom(server, vault, amount);
+}
+
 export async function requirementsFor(vault: string, amount: number, facilitator = facilitatorFromEnv()) {
   if (!facilitator) throw new Error("Falta X402_API_KEY");
-  return buildRequirements(makeServer(facilitator), vault, amount);
+  return requirementsFrom(await sharedServer(facilitator), vault, amount);
 }
 
 export async function payWithX402(
@@ -67,24 +95,28 @@ export async function payWithX402(
   facilitator: FacilitatorClient | null = facilitatorFromEnv(),
   env: Record<string, string | undefined> = process.env,
 ): Promise<X402Result> {
-  const unavailable = x402Unavailable(env);
-  if (unavailable) return { status: "rejected", reason: unavailable };
-  if (!facilitator) return { status: "rejected", reason: "Falta X402_API_KEY: el cobro con x402 no está habilitado" };
+  if (x402Unavailable(env) || !facilitator) return { status: "rejected", code: "unavailable" };
+  if (!isAddress(vault) || !Number.isFinite(amount) || amount <= 0) return { status: "rejected", code: "invalid" };
   let settling = false;
   try {
-    const server = makeServer(facilitator);
-    const req = await buildRequirements(server, vault, amount);
-    if (!server.findMatchingRequirements([req], payment)) return { status: "rejected", reason: "El pago no coincide con el monto o el comercio" };
+    const server = await sharedServer(facilitator);
+    const req = await requirementsFrom(server, vault, amount);
+    if (!server.findMatchingRequirements([req], payment)) return { status: "rejected", code: "invalid" };
     const verified = await server.verifyPayment(payment, req);
-    if (!verified.isValid) return { status: "rejected", reason: `Pago inválido: ${verified.invalidReason ?? "sin detalle"}` };
+    if (!verified.isValid) {
+      console.error("x402 verify rechazó:", verified.invalidReason);
+      return { status: "rejected", code: "invalid" };
+    }
     settling = true;
     const settled = await server.settlePayment(payment, req);
-    if (!settled.success || !settled.transaction) return { status: "rejected", reason: `El facilitador no liquidó: ${settled.errorReason ?? "sin detalle"}` };
+    if (!settled.success || !settled.transaction) {
+      console.error("x402 settle no liquidó:", settled.errorReason);
+      return { status: "rejected", code: "not_settled" };
+    }
     return { status: "paid", txHash: settled.transaction, payer: settled.payer };
   } catch (e) {
     console.error("payWithX402 falló", e);
-    const msg = e instanceof Error ? e.message : String(e);
     // un error durante settle es indeterminado: la plata pudo haberse movido, no reintentar sin verificar onchain
-    return { status: "rejected", reason: settling ? `No pudimos confirmar la liquidación (verificá onchain antes de reintentar): ${msg}` : `Error con el facilitador: ${msg}` };
+    return { status: "rejected", code: settling ? "indeterminate" : "facilitator_error" };
   }
 }

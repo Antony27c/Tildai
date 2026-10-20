@@ -1,11 +1,15 @@
 import { createPublicClient, http, type Address, type Hex } from "viem";
 import { celo, celoSepolia } from "viem/chains";
 
+import { sendTelegramMessage } from "eve/channels/telegram";
+
 import { agentClients } from "./chain.ts";
-import { ChainVault } from "./chainVault.ts";
+import { EventCursor } from "./avisos.ts";
+import { ChainVault, type Balances } from "./chainVault.ts";
+import { indexerClient, IndexerVault, type Indexer } from "./indexerClient.ts";
 import { SalesBook } from "./sales.ts";
 import { FakeVault, type Vault } from "./vault.ts";
-import { ChatVaultRegistry, CreadorVault } from "./alta.ts";
+import { ChatVaultRegistry, CreadorVault, maxRateAlta, numEnv } from "./alta.ts";
 import { VaultOps, type Fx } from "./vaultOps.ts";
 
 const network = process.env.TILDAI_NETWORK === "celoSepolia" ? "celoSepolia" : "celo";
@@ -27,6 +31,11 @@ export function chatIdDe(ctx: ToolCtx): string {
   return id;
 }
 
+/** Raw auth attributes of the current message (chat_id, message_id, ...); tools derive op ids from them. */
+export function attrsDe(ctx: ToolCtx): Record<string, unknown> | undefined {
+  return ctx?.session?.auth?.current?.attributes;
+}
+
 let registry: ChatVaultRegistry | undefined;
 export function chatRegistry() {
   return (registry ??= ChatVaultRegistry.load(process.env.TILDAI_REGISTRY ?? "data/chats.json"));
@@ -44,20 +53,86 @@ export function vaultDelChat(ctx: ToolCtx): { address: Address; fromBlock: bigin
 let reader: ReturnType<typeof createPublicClient> | undefined;
 const publicReader = () => (reader ??= createPublicClient({ chain: network === "celo" ? celo : celoSepolia, transport: http() }));
 
-const books = new Map<string, SalesBook>();
+let idx: Indexer | null | undefined;
+/** The payments indexer: source of truth for sales when TILDAI_INDEXER_URL + TILDAI_INDEXER_TOKEN are set. */
+export function indexer(): Indexer | undefined {
+  if (idx === undefined) {
+    const baseUrl = process.env.TILDAI_INDEXER_URL;
+    const token = process.env.TILDAI_INDEXER_TOKEN;
+    if ((baseUrl && !token) || (!baseUrl && token)) {
+      console.error("[tildai] TILDAI_INDEXER_URL y TILDAI_INDEXER_TOKEN van juntas: falta una, indexer deshabilitado");
+    }
+    idx = baseUrl && token ? indexerClient({ baseUrl, token }) : null;
+  }
+  return idx ?? undefined;
+}
+
+let events: EventCursor | undefined;
+export function eventCursor() {
+  return (events ??= EventCursor.load(process.env.TILDAI_EVENTS_FILE ?? "data/eventos.json"));
+}
+
+const books = new Map<string, { book: SalesBook; balances: () => Promise<Balances> }>();
+/** Book and onchain balances for one vault, cached by address (used by tools and by the daily close). */
+export function datosDelVault(v: { address: Address; fromBlock: bigint }) {
+  let e = books.get(v.address);
+  if (!e) {
+    const cv = new ChainVault({ address: v.address, reader: publicReader(), fromBlock: v.fromBlock });
+    // With an indexer configured it is the source of truth for sales; onchain reads stay as verification.
+    const idx = indexer();
+    const src: Vault = idx ? new IndexerVault(v.address, idx) : cv;
+    books.set(v.address, (e = { book: new SalesBook(src), balances: () => cv.balances() }));
+  }
+  return e;
+}
+
 export function bookDelChat(ctx: ToolCtx): SalesBook {
-  const v = vaultDelChat(ctx);
-  let b = books.get(v.address);
-  if (!b) books.set(v.address, (b = new SalesBook(new ChainVault({ address: v.address, reader: publicReader(), fromBlock: v.fromBlock }))));
-  return b;
+  return datosDelVault(vaultDelChat(ctx)).book;
 }
 
 const opsByVault = new Map<string, VaultOps>();
-export function opsDelChat(ctx: ToolCtx): VaultOps {
-  const { address } = vaultDelChat(ctx);
+export function opsDelVault(address: Address): VaultOps {
   let o = opsByVault.get(address);
-  if (!o) opsByVault.set(address, (o = new VaultOps({ vault: address, feeCurrency: network === "celo" ? USDT_FEE_ADAPTER : undefined, ...agentClients(network, need("AGENT_PRIVATE_KEY") as Hex) })));
+  if (!o) opsByVault.set(address, (o = new VaultOps({ ...opsBase(address), ...agentClients(network, need("AGENT_PRIVATE_KEY") as Hex) })));
   return o;
+}
+export function opsDelChat(ctx: ToolCtx): VaultOps {
+  return opsDelVault(vaultDelChat(ctx).address);
+}
+
+/** Chat that owns a vault (registry first, env vault + owner chat as fallback): who gets the Telegram alert. */
+export function chatDelVault(address: Address): string | undefined {
+  const reg = chatRegistry().conVault().find((e) => e.vault.toLowerCase() === address.toLowerCase())?.chatId;
+  return reg ?? (address === vaultAddress ? process.env.TILDAI_OWNER_CHAT_ID : undefined);
+}
+
+/** VaultOps wiring shared by every vault: persisted op log plus Telegram alert to the vault's owner chat. */
+function opsBase(address: Address) {
+  return {
+    vault: address,
+    feeCurrency: network === "celo" ? USDT_FEE_ADAPTER : undefined,
+    recordsFile: process.env.TILDAI_OPS_FILE ?? "data/ops.jsonl",
+    notify: async (msg: string) => {
+      console.error("[tildai] ALERTA", msg);
+      const chatId = chatDelVault(address);
+      if (!chatId) return;
+      try {
+        await sendTelegramMessage({ chatId, body: { text: `Aviso de Tildai: ${msg}` } });
+      } catch (e) {
+        console.error("[tildai] no pude mandar el aviso por Telegram", e);
+      }
+    },
+  };
+}
+
+/** Every chat→vault in the registry, plus the env vault of the owner chat if it isn't registered: used by the daily close and the sale notifications. */
+export function vaultsConChat(): { chatId: string; vault: { address: Address; fromBlock: bigint } }[] {
+  const jobs = chatRegistry().conVault().map((e) => ({ chatId: e.chatId, vault: { address: e.vault, fromBlock: e.fromBlock } }));
+  const owner = process.env.TILDAI_OWNER_CHAT_ID;
+  if (vaultAddress && owner && !jobs.some((j) => j.chatId === owner || j.vault.address === vaultAddress)) {
+    jobs.push({ chatId: owner, vault: { address: vaultAddress, fromBlock: BigInt(need("TILDAI_FROM_BLOCK")) } });
+  }
+  return jobs;
 }
 
 // shortcut: one vault per process, taken from TILDAI_VAULT; without it reads use the in-memory fake and writes are disabled. Use the factory registry per merchant.
@@ -81,7 +156,7 @@ let ops: VaultOps | undefined;
 /** Writes go only through agentClients() (attribution tag). Reads the key lazily and never logs it. */
 export function vaultOps() {
   if (!vaultAddress) throw new Error("Falta TILDAI_VAULT: sin vault real no se mueven fondos");
-  if (!ops) ops = new VaultOps({ vault: vaultAddress, feeCurrency: network === "celo" ? USDT_FEE_ADAPTER : undefined, ...agentClients(network, need("AGENT_PRIVATE_KEY") as Hex) });
+  if (!ops) ops = new VaultOps({ ...opsBase(vaultAddress), ...agentClients(network, need("AGENT_PRIVATE_KEY") as Hex) });
   return ops;
 }
 
@@ -97,12 +172,18 @@ export function creadorVault() {
   const factory = process.env.TILDAI_FACTORY as Address | undefined;
   if (!factory) throw new Error("Falta TILDAI_FACTORY: no puedo dar de alta el comercio");
   if (!creador) {
+    const maxAltas = numEnv("TILDAI_MAX_ALTAS_DIA", "5");
+    const pendienteMin = numEnv("TILDAI_ALTA_PENDIENTE_MIN", "30");
     creador = new CreadorVault({
       registry: chatRegistry(),
       factory,
       fromBlock: BigInt(need("TILDAI_FROM_BLOCK")),
       feeCurrency: network === "celo" ? USDT_FEE_ADAPTER : undefined,
       payBaseUrl: payBaseUrl(),
+      // Un tope inválido cierra las altas (0): ante la duda no se gasta gas.
+      maxAltasDia: Number.isFinite(maxAltas) && maxAltas >= 0 ? Math.floor(maxAltas) : 0,
+      pendienteMin: Number.isFinite(pendienteMin) && pendienteMin > 0 ? Math.floor(pendienteMin) : 30,
+      maxRate: maxRateAlta(),
       ...agentClients(network, need("AGENT_PRIVATE_KEY") as Hex),
     });
   }

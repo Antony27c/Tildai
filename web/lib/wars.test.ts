@@ -48,11 +48,24 @@ test("warsAtomic: 18 decimales y monto inválido tira", () => {
   assert.throws(() => warsAtomic(0));
 });
 
-test("retriable: solo 402 que no sean settle indeterminado", () => {
-  assert.equal(retriable(402, "permit nonce usado"), true);
-  assert.equal(retriable(402, "No pudimos confirmar la liquidación (verificá onchain antes de reintentar)"), false);
-  assert.equal(retriable(200), false);
-  assert.equal(retriable(500), false);
+test("retriable: solo un 402 con code 'invalid'; 'indeterminate' jamás", () => {
+  assert.equal(retriable(402, "invalid"), true);
+  assert.equal(retriable(402, "indeterminate"), false);
+  assert.equal(retriable(402, "not_settled"), false);
+  assert.equal(retriable(402), false);
+  assert.equal(retriable(200, "invalid"), false);
+  assert.equal(retriable(500, "invalid"), false);
+});
+
+test("readPayResponse: el código decide el texto, nunca el detalle del facilitador", async () => {
+  assert.equal((readPayResponse(402, { code: "not_settled" }) as any).reason, GENERIC);
+  assert.equal((readPayResponse(402, { code: "indeterminate" }) as any).reason, UNCONFIRMED);
+  assert.equal((readPayResponse(402, { code: "invalid" }) as any).reason, "El pago no coincide con el monto o el comercio");
+  // insufficient_credits es NUESTRO saldo en el facilitador: jamás "no te alcanza el saldo" al cliente
+  assert.equal(mapPayError("insufficient_credits"), GENERIC);
+  assert.equal((readPayResponse(402, { code: "not_settled", error: "insufficient_credits" }) as any).reason, GENERIC);
+  // sin código, el texto viejo sigue mapeando por regex
+  assert.equal((readPayResponse(400, { error: "user rejected" }) as any).reason, REJECTED);
 });
 
 test("readPayResponse: 200 sin txHash es pendiente, nunca 'no se te debitó'", async () => {

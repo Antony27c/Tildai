@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 
 import { createPublicClient, http, parseUnits, type Address, type Hex } from "viem";
@@ -16,7 +18,7 @@ const PAYOUT = "0x2B7c25FedB6d09e149fedc1ffE35529b1cab1f65" as Address;
 const DAY = 86_400_000;
 const NOW = Date.UTC(2026, 9, 20, 18, 0, 0);
 
-function fakeChain(o: { used?: boolean; simulateError?: string; receipt?: string; latest?: bigint; rpcDown?: boolean } = {}) {
+function fakeChain(o: { used?: boolean; simulateError?: string; receipt?: string; latest?: bigint; rpcDown?: boolean; recordsFile?: string } = {}) {
   const calls: { fn: string; args?: any }[] = [];
   const records: OpRecord[] = [];
   const alerts: string[] = [];
@@ -45,7 +47,7 @@ function fakeChain(o: { used?: boolean; simulateError?: string; receipt?: string
       return "0xabc" as Hex;
     },
   };
-  const ops = new VaultOps({ vault: VAULT, wallet, reader, onRecord: (r) => records.push(r), notify: (m) => alerts.push(m) });
+  const ops = new VaultOps({ vault: VAULT, wallet, reader, recordsFile: o.recordsFile, onRecord: (r) => records.push(r), notify: (m) => alerts.push(m) });
   return { ops, calls, records, alerts };
 }
 const names = (c: { calls: { fn: string }[] }) => c.calls.map((x) => x.fn);
@@ -103,6 +105,28 @@ test("monto 0 no llega a la cadena", async () => {
   const c = fakeChain();
   assert.equal((await c.ops.apartar("z", "ahorro", 0n)).resultado, "error");
   assert.deepEqual(names(c), []);
+});
+
+test("cada OpRecord queda persistido en JSONL (una línea por op, con el vault) y la falla avisa por notify", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "tildai-"));
+  const file = join(dir, "ops.jsonl");
+  const ok = fakeChain({ recordsFile: file });
+  await ok.ops.apartar("a1", "ahorro", pesosToWei(10));
+  const bad = fakeChain({ recordsFile: file, simulateError: "DailyCapExceeded" });
+  const r = await bad.ops.retirar("r1", pesosToWei(999));
+  assert.equal(r.resultado, "error");
+  const lineas = readFileSync(file, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+  assert.equal(lineas.length, 2); // append: una por operación, en orden
+  assert.equal(lineas[0].id, "a1");
+  assert.equal(lineas[0].vault, VAULT);
+  assert.equal(lineas[0].resultado, "ejecutada");
+  assert.equal(lineas[0].monto, pesosToWei(10).toString()); // bigint se serializa como string
+  assert.equal(lineas[1].id, "r1");
+  assert.equal(lineas[1].resultado, "error");
+  assert.equal(lineas[1].error, "DailyCapExceeded");
+  assert.equal(bad.alerts.length, 1);
+  assert.match(bad.alerts[0], /r1/);
+  rmSync(dir, { recursive: true });
 });
 
 test("tools apartar/retirar: ids por defecto, montos en pesos y link de off-ramp con la wallet de retiro", async () => {
