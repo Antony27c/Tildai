@@ -159,11 +159,19 @@ export class CreadorVault {
     this.o = { ...rest, maxAltasDia, pendienteMin, maxRate, now };
   }
 
-  /** The vault address always comes from the VaultCreated log: never from a simulated return value. */
-  private vaultDelRecibo(logs: any[]): Address {
-    const e = parseEventLogs({ abi: factoryAbi, eventName: "VaultCreated", logs })[0];
+  /**
+   * The vault address always comes from the VaultCreated log — never from a simulated return — and only
+   * if OUR factory emitted it for THIS owner: viem's waitForTransactionReceipt follows a same-nonce
+   * replacement, so the receipt can carry another chat's VaultCreated and must not be assigned here.
+   */
+  private vaultDelRecibo(logs: any[], owner: Address): Address {
+    const e = parseEventLogs({ abi: factoryAbi, eventName: "VaultCreated", logs }).find(
+      (l: any) =>
+        (l.address as string)?.toLowerCase() === this.o.factory.toLowerCase() &&
+        (l.args?.owner as string)?.toLowerCase() === owner.toLowerCase(),
+    );
     const vault = e?.args?.vault;
-    if (!vault) throw new Error("la tx confirmó pero no trajo el evento VaultCreated");
+    if (!vault) throw new Error(`la tx confirmó pero no trajo el VaultCreated de esta factory para el owner ${owner}`);
     return vault as Address;
   }
 
@@ -175,7 +183,10 @@ export class CreadorVault {
       const b = a + 9_999n < latest ? a + 9_999n : latest;
       logs.push(...(await this.o.reader.getLogs({ address: this.o.factory, event: vaultCreatedEventArgs, args: { owner }, fromBlock: a, toBlock: b })));
     }
-    const last = logs.at(-1);
+    // The query already filters by factory+owner server-side; re-check anyway, a confused RPC must not assign a vault.
+    const last = logs
+      .filter((l) => (l.address as string)?.toLowerCase() === this.o.factory.toLowerCase() && (l.args?.owner as string)?.toLowerCase() === owner.toLowerCase())
+      .at(-1);
     return last ? { vault: last.args.vault as Address, block: BigInt(last.blockNumber) } : null;
   }
 
@@ -201,6 +212,16 @@ export class CreadorVault {
   }
 
   private locks = new Map<string, Promise<AltaResult>>();
+  /** Serializes "pin nonce → persist → broadcast" across ALL chats: two parallel altas can never pin the same nonce. */
+  private walletLock: Promise<void> = Promise.resolve();
+  /** Belt for a node whose "pending" doesn't yet reflect the tx we just broadcast (load-balanced RPC). */
+  private ultimoNonce: number | undefined;
+
+  private conLockWallet<T>(f: () => Promise<T>): Promise<T> {
+    const p = this.walletLock.then(f, f);
+    this.walletLock = p.then(() => undefined, () => undefined);
+    return p;
+  }
 
   /** Two concurrent /start from the same chat share one in-flight creation, so they can never send two createVault. */
   crear(chatId: string, ownerRaw: string, capWei: bigint): Promise<AltaResult> {
@@ -269,7 +290,9 @@ export class CreadorVault {
         let found: Address | undefined;
         let foundBlock: bigint | undefined;
         if (receipt.status === "success") {
-          found = this.vaultDelRecibo(receipt.logs ?? []);
+          // A VaultCreated of another owner/factory is not proof of OUR vault: vaultDelRecibo throws,
+          // the catch returns doubt and the entry keeps its hash+nonce for the next check.
+          found = this.vaultDelRecibo(receipt.logs ?? [], (prev.owner ?? owner) as Address);
           foundBlock = receipt.blockNumber ?? (receipt.logs ?? []).at(-1)?.blockNumber;
         } else {
           barridoHecho = true;
@@ -351,18 +374,23 @@ export class CreadorVault {
       const { request } = await reader.simulateContract({ account: wallet.account, address: factory, abi: factoryAbi, functionName: "createVault", args: [owner, owner, capWei, maxRate, MAX_SWAP] });
       // Pin the nonce BEFORE broadcasting and persist it (same pattern as deploy-mainnet): a timeout after
       // send leaves the entry recoverable, and every resend of this alta goes out on the SAME nonce.
-      nonce = nonceFijado;
-      if (nonce === undefined) {
-        if (!reader.getTransactionCount) throw new Error("el reader no puede fijar el nonce del alta (falta getTransactionCount)");
-        nonce = Number(await reader.getTransactionCount({ address: wallet.account.address, blockTag: "pending" }));
-      }
-      await registry.set(chatId, { ...base, estado: "enviada", nonce });
-      pudoSalir = true;
-      sentHash = await wallet.writeContract(feeCurrency ? { ...request, nonce, feeCurrency } : { ...request, nonce });
-      await registry.set(chatId, { ...base, estado: "enviada", txHash: sentHash, nonce });
+      // The whole span runs under the wallet lock: two chats can't pin the same nonce in parallel.
+      sentHash = await this.conLockWallet(async () => {
+        nonce = nonceFijado;
+        if (nonce === undefined) {
+          if (!reader.getTransactionCount) throw new Error("el reader no puede fijar el nonce del alta (falta getTransactionCount)");
+          nonce = Math.max(Number(await reader.getTransactionCount({ address: wallet.account.address, blockTag: "pending" })), (this.ultimoNonce ?? -1) + 1);
+          this.ultimoNonce = nonce;
+        }
+        await registry.set(chatId, { ...base, estado: "enviada", nonce });
+        pudoSalir = true;
+        const h = await wallet.writeContract(feeCurrency ? { ...request, nonce, feeCurrency } : { ...request, nonce });
+        await registry.set(chatId, { ...base, estado: "enviada", txHash: h, nonce });
+        return h;
+      });
       const receipt = await reader.waitForTransactionReceipt({ hash: sentHash });
       if (receipt.status !== "success") throw new Error(`la tx ${sentHash} se revirtió`);
-      const vault = this.vaultDelRecibo((receipt as any).logs ?? []);
+      const vault = this.vaultDelRecibo((receipt as any).logs ?? [], owner);
       await registry.set(chatId, { ...base, estado: "creado", vault, fromBlock: String((receipt as any).blockNumber ?? ""), txHash: sentHash, nonce });
       return { estado: "creado", vault, resumen: this.resumen(vault, capWei) };
     } catch (err) {

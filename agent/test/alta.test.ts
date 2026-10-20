@@ -65,7 +65,7 @@ function setup(
     },
     async getLogs({ args }: any) {
       calls.push("getLogs");
-      return o.vaultOnchain && args.owner === OWNER ? [{ args: { vault: o.vaultOnchain, owner: OWNER }, blockNumber: o.vaultLogBlock ?? 55n }] : [];
+      return o.vaultOnchain && args.owner === OWNER ? [{ address: FACTORY, args: { vault: o.vaultOnchain, owner: OWNER }, blockNumber: o.vaultLogBlock ?? 55n }] : [];
     },
     async getTransactionReceipt() {
       calls.push("getTxReceipt");
@@ -542,6 +542,84 @@ test("el nonce fijado se escribe en el archivo ANTES de difundir (crash durante 
   const desdeArchivo = ChatVaultRegistry.load(file).get("w");
   assert.equal(desdeArchivo?.nonce, 3);
   rmSync(dir, { recursive: true });
+});
+
+const SELECTOR_VAULT_CREATED = toEventSelector("VaultCreated(address indexed vault, address indexed owner)");
+const OTRO_OWNER = "0x9999999999999999999999999999999999999999" as Address;
+
+// Repro del hallazgo G: sin un lock global, dos /start de chats distintos leen el mismo pending y
+// envían con el mismo nonce — si el gas del segundo supera al primero, lo reemplaza y el chat A
+// podía quedar con el vault de B. El lock serializa "fijar nonce → persistir → difundir".
+test("dos altas en paralelo de chats distintos fijan nonces distintos", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "tildai-"));
+  // registry.set con archivo real: la persistencia da el hueco donde, sin lock, el segundo /start
+  // leería el mismo pending que el primero.
+  const c = setup({ file: join(dir, "chats.json"), slowSimulate: true });
+  const reader = (c.creador as any).o.reader;
+  const wallet = (c.creador as any).o.wallet;
+  // El pending del nodo incluye las tx ya difundidas (modela el nodo real).
+  reader.getTransactionCount = async () => 7 + c.writes.length;
+  // Hash distinto por envío y el VaultCreated del recibo con el owner de ESA tx.
+  const ownerDeHash = new Map<string, Address>();
+  wallet.writeContract = async (req: any) => {
+    c.calls.push("write");
+    c.writes.push(req);
+    const h = `0xhash${c.writes.length}` as Hex;
+    ownerDeHash.set(h, req.args[0]);
+    return h;
+  };
+  reader.waitForTransactionReceipt = async ({ hash }: any) => ({
+    status: "success",
+    logs: [{ address: FACTORY, topics: [SELECTOR_VAULT_CREATED, pad(VAULT), pad(ownerDeHash.get(hash)!)], data: "0x", blockNumber: 777n }],
+    transactionHash: hash,
+    blockNumber: 777n,
+  });
+  const [ra, rb] = await Promise.all([
+    c.creador.crear("A", OWNER, pesosToWei(1000)),
+    c.creador.crear("B", OTRO_OWNER, pesosToWei(1000)),
+  ]);
+  assert.equal(ra.estado, "creado");
+  assert.equal(rb.estado, "creado");
+  assert.equal(c.writes.length, 2);
+  assert.notEqual(c.writes[0].nonce, c.writes[1].nonce, "dos altas en paralelo fijaron el mismo nonce");
+  assert.deepEqual(c.writes.map((w) => w.nonce).sort(), [7, 8]);
+  rmSync(dir, { recursive: true });
+});
+
+// Si viem sigue el reemplazo y el recibo trae un VaultCreated que no es nuestro, la entrada no se da
+// por buena: conserva hash+nonce y el reintento verifica onchain / barre por owner.
+test("recibo con VaultCreated de otro owner o de otra factory: el alta no se asigna", async () => {
+  const reciboAjeno = (address: Address, owner: Address) => async ({ hash }: any) => ({
+    status: "success",
+    logs: [{ address, topics: [SELECTOR_VAULT_CREATED, pad(VAULT), pad(owner)], data: "0x", blockNumber: 777n }],
+    transactionHash: hash,
+    blockNumber: 777n,
+  });
+  const c = setup();
+  (c.creador as any).o.reader.waitForTransactionReceipt = reciboAjeno(FACTORY, OTRO_OWNER);
+  const r = await c.creador.crear("x", OWNER, pesosToWei(1000));
+  assert.equal(r.estado, "error");
+  assert.equal(c.registry.get("x")?.vault, undefined);
+  assert.equal(c.registry.get("x")?.txHash, "0xfeed");
+  assert.equal(c.registry.get("x")?.nonce, 0); // conserva el nonce fijado para la recuperación
+
+  const c2 = setup();
+  (c2.creador as any).o.reader.waitForTransactionReceipt = reciboAjeno("0x8888888888888888888888888888888888888888" as Address, OWNER);
+  const r2 = await c2.creador.crear("x", OWNER, pesosToWei(1000));
+  assert.equal(r2.estado, "error");
+  assert.equal(c2.registry.get("x")?.vault, undefined);
+});
+
+test("el barrido ignora un VaultCreated emitido por otra dirección", async () => {
+  const c = setup({ vaultOnchain: VAULT, vaultLogBlock: 55n });
+  (c.creador as any).o.reader.getLogs = async () => [
+    { address: "0x8888888888888888888888888888888888888888", args: { vault: VAULT, owner: OWNER }, blockNumber: 55n },
+  ];
+  await c.registry.set("s", { estado: "enviada", owner: OWNER, dailyCap: "1", at: Date.now() - 1000 });
+  const r = await c.creador.crear("s", OWNER, pesosToWei(1000));
+  // No encontró vault de NUESTRA factory para ese owner → el alta sigue su curso normal.
+  assert.equal(r.estado, "creado");
+  assert.equal(c.calls.includes("write"), true);
 });
 
 test("createVault usa el maxRate configurado y el resumen lo muestra", async () => {
