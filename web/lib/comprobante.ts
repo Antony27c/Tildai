@@ -1,7 +1,7 @@
 import { createPublicClient, http, parseAbi, parseEventLogs } from "viem";
 import { celo, celoSepolia } from "viem/chains";
 import { checkVault } from "./vaults.ts";
-import { WARS } from "./wars.ts";
+import { WARS_BY_CHAIN } from "./wars.ts";
 
 type Env = Record<string, string | undefined>;
 
@@ -21,7 +21,6 @@ type Reader = {
 };
 
 const chains = { 42220: celo, 11142220: celoSepolia } as const;
-const warsByChain = { 42220: WARS, 11142220: "0x7fd80e16929eac12833c6e214b00efd43ad20e49" } as const;
 const scans = { 42220: "https://celoscan.io/tx/", 11142220: "https://celo-sepolia.blockscout.com/tx/" } as const;
 const TX_RE = /^0x[0-9a-fA-F]{64}$/;
 const MIN_CONFIRMATIONS = 5;
@@ -33,7 +32,7 @@ export async function verifyComprobante(txHash: string | undefined, env: Env = p
   if (!txHash || !TX_RE.test(txHash)) return { kind: "invalid_hash" };
   const chain = chains[Number(env.TILDAI_CHAIN_ID) as keyof typeof chains];
   if (!chain) return { kind: "no_network" };
-  const wars = warsByChain[chain.id];
+  const wars = WARS_BY_CHAIN[chain.id];
   const reader = injected ?? createPublicClient({ chain, transport: http(env.TILDAI_RPC_URL || undefined) });
 
   let receipt: any;

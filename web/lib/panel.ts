@@ -1,6 +1,6 @@
 import { createPublicClient, http, parseAbi } from "viem";
 import { celo, celoSepolia } from "viem/chains";
-import { WARS } from "./wars.ts";
+import { WARS_BY_CHAIN } from "./wars.ts";
 
 type Env = Record<string, string | undefined>;
 type Fetch = typeof fetch;
@@ -106,16 +106,13 @@ export function summarize(sales: PanelSale[], payments: PanelPayment[]) {
 const chains = { 42220: celo, 11142220: celoSepolia } as const;
 const erc20 = parseAbi(["function balanceOf(address) view returns (uint256)"]);
 
-function chainReader(env: Env): Reader {
-  const chain = chains[Number(env.TILDAI_CHAIN_ID) as keyof typeof chains];
-  if (!chain) throw new Error("TILDAI_CHAIN_ID debe ser 42220 o 11142220");
-  return createPublicClient({ chain, transport: http(env.TILDAI_RPC_URL || undefined) });
-}
-
 // null = no se pudo leer: la página muestra "No disponible", nunca $0.
 export async function readVaultBalance(vault: string, env: Env = process.env, reader?: Reader): Promise<bigint | null> {
   try {
-    const b = await (reader ?? chainReader(env)).readContract({ address: WARS, abi: erc20, functionName: "balanceOf", args: [vault] });
+    const chain = chains[Number(env.TILDAI_CHAIN_ID) as keyof typeof chains];
+    if (!chain) throw new Error("TILDAI_CHAIN_ID debe ser 42220 o 11142220");
+    const r = reader ?? createPublicClient({ chain, transport: http(env.TILDAI_RPC_URL || undefined) });
+    const b = await r.readContract({ address: WARS_BY_CHAIN[chain.id], abi: erc20, functionName: "balanceOf", args: [vault] });
     return typeof b === "bigint" ? b : null;
   } catch (e) {
     console.error("readVaultBalance falló", e);
