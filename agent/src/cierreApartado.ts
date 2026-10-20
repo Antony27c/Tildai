@@ -92,11 +92,15 @@ export async function cierreDeTodos(a: {
   indexer?: Indexer;
 }): Promise<void> {
   for (const j of a.jobs) {
+    let sinFecha = 0;
     try {
       const { book, balances } = a.datos(j.vault);
       if (a.indexer) {
         try {
           await ventasDelDia(a.indexer, j.vault.address, book.today());
+          // The ranged call leaves out pruned-block payments (timestampUnavailable): count them apart with
+          // the unranged read so the close says they didn't enter the day's total. Their date is never guessed.
+          sinFecha = (await a.indexer.pagosDelVault(j.vault.address)).filter((p) => p.timestampUnavailable).length;
         } catch (err) {
           console.error(`[tildai] ALERTA cierre del chat ${j.chatId}: indexer sin datos completos`, err);
           await a.send(j.chatId, "Avisale al dueño que el cierre de hoy quedó pendiente: el indexer todavía no tiene los datos completos (o está caído) y reintenta solo. No aparté nada.");
@@ -115,7 +119,8 @@ export async function cierreDeTodos(a: {
           apartado = `No aparté nada: ${(err as Error).message}`;
         }
       }
-      await a.send(j.chatId, `Enviale al dueño este resumen tal cual, sin cambiar cifras:\n\n${resumen}\n\nApartado:\n${apartado}`);
+      const notaSinFecha = sinFecha ? `\n\nOjo: hay ${sinFecha === 1 ? "un pago" : `${sinFecha} pagos`} sin fecha (son de bloques que el nodo ya no tiene) que no ${sinFecha === 1 ? "entró" : "entraron"} en el total de hoy.` : "";
+      await a.send(j.chatId, `Enviale al dueño este resumen tal cual, sin cambiar cifras:\n\n${resumen}\n\nApartado:\n${apartado}${notaSinFecha}`);
     } catch (err) {
       console.error(`[tildai] ALERTA cierre del chat ${j.chatId}: ${(err as Error).message}`, err);
       try {

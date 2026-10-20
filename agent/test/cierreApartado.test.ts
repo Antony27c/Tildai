@@ -228,6 +228,45 @@ test("indexer caído o 503: ese cierre avisa pendiente y no aparta; los demás s
   assert.equal(chains.get(V1)!.writes.length, 2);
 });
 
+test("pagos sin fecha (bloque podado): el cierre avisa que no entraron en el total y sí aparta", async () => {
+  const V1 = "0x00000000000000000000000000000000000000a1" as Address;
+  const c = chain();
+  const W = 10n ** 18n;
+  const pay = (id: string, pesos: bigint, timestamp: number | null, unavailable = false) => ({
+    id,
+    from: "0x9",
+    amount: (pesos * W).toString(),
+    txHash: "0x1",
+    timestamp,
+    ...(unavailable && { timestampUnavailable: true as const }),
+  });
+  const todos = [pay("ok", 1000n, NOW - 60_000), pay("podado", 500n, null, true)];
+  // Como el server real: con rango quedan afuera los sin timestamp; sin rango vienen todos.
+  const indexer: Indexer = {
+    eventosDesde: async () => ({ events: [], cursor: 0 }),
+    pagosDelVault: async (_v, range) => todos.filter((p) => (p.timestamp == null ? !range : !range || (p.timestamp >= range.since && p.timestamp < range.until))),
+  };
+  const sent: { chatId: string; texto: string }[] = [];
+  const orig = console.error;
+  console.error = () => {};
+  try {
+    await cierreDeTodos({
+      jobs: [{ chatId: "c1", vault: { address: V1, fromBlock: 0n } }],
+      datos: () => ({ book: bookWith(1000), balances: bal(pesosToWei(1500)) }),
+      ops: () => c.ops,
+      env,
+      send: (chatId, texto) => sent.push({ chatId, texto }),
+      indexer,
+    });
+  } finally {
+    console.error = orig;
+  }
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].texto, /Cierre de caja/);
+  assert.match(sent[0].texto, /un pago sin fecha.*no entró en el total de hoy/);
+  assert.equal(c.writes.length, 2); // el día se verificó: se aparta igual, solo que se avisa lo que quedó afuera
+});
+
 test("el envío a Telegram se espera: un rechazo se observa, se avisa y los demás siguen", async () => {
   const V1 = "0x00000000000000000000000000000000000000a1" as Address;
   const V2 = "0x00000000000000000000000000000000000000a2" as Address;
