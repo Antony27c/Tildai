@@ -117,7 +117,8 @@ test("alta feliz: vault del evento del recibo, resumen con link y límites, feeC
   assert.match(r.resumen, /https:\/\/pay\.test\/\?vault=0x2222/);
   assert.match(r.resumen, /tope diario \$100\.000/);
   assert.match(r.resumen, /\$1\.700 por USD₮/);
-  assert.deepEqual(c.calls, ["simulate", "write", "getTx", "wait"]);
+  assert.deepEqual(c.calls, ["simulate", "txCount", "write", "wait"]); // el nonce se fija antes de enviar
+  assert.equal(c.writes[0].nonce, 0);
   assert.deepEqual(c.writes[0].args, [OWNER, OWNER, pesosToWei(100_000), MAX_RATE, MAX_SWAP]);
   assert.equal(c.writes[0].functionName, "createVault");
   assert.equal(c.writes[0].feeCurrency, ADAPTER);
@@ -469,12 +470,78 @@ test("el alta rechaza owner = wallet del agente", async () => {
   assert.deepEqual(c.calls, []); // ni simuló
 });
 
-test("el nonce de la tx enviada queda guardado en el registro", async () => {
-  const c = setup({ tx: { nonce: 7, blockNumber: null }, waitError: "timeout" });
+test("el nonce de la tx enviada queda guardado en el registro (se fija antes de enviar)", async () => {
+  const c = setup({ txCount: 7, waitError: "timeout" });
   await c.creador.crear("n", OWNER, pesosToWei(1000));
+  assert.equal(c.writes[0].nonce, 7); // createVault salió con el nonce reservado
   assert.equal(c.registry.get("n")?.nonce, 7);
   assert.equal(c.registry.get("n")?.estado, "error"); // wait falló, pero nonce + txHash quedaron
   assert.equal(c.registry.get("n")?.txHash, "0xfeed");
+});
+
+// La primera tx quedó en el mempool cuando un /start rápido reintenta: el reenvío sale con el MISMO
+// nonce (reemplaza a la vieja o es ella), jamás con otro — eso es lo que impide que minen dos vaults.
+test("writeContract falla tras difundir: el reintento rápido reenvía con el MISMO nonce, una sola createVault efectiva", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "tildai-"));
+  const file = join(dir, "chats.json");
+  const c = setup({ file, writeError: "fetch failed (timeout)", txCount: 0 });
+  const r1 = await c.creador.crear("x", OWNER, pesosToWei(1000));
+  assert.equal(r1.estado, "error");
+  assert.equal(c.registry.get("x")?.txHash, undefined); // nunca supimos el hash
+  assert.equal(c.registry.get("x")?.nonce, 0); // pero el nonce quedó fijado y persistido
+  assert.equal(c.writes[0].nonce, 0);
+  // Reintento rápido, la primera sigue en mempool (latest = 0 → nonce 0 libre). Otro proceso leyendo el archivo.
+  const c2 = setup({ file, txCount: 0 });
+  const r2 = await c2.creador.crear("x", OWNER, pesosToWei(1000));
+  assert.equal(r2.estado, "creado");
+  assert.equal(c2.writes.length, 1);
+  assert.equal(c2.writes[0].nonce, 0, "el reintento salió con otro nonce: las dos tx pueden minar → dos vaults");
+  assert.equal(c2.registry.altasDelDia(), 1); // es la misma alta: no gasta otro cupo del tope
+  rmSync(dir, { recursive: true });
+});
+
+test("nonce fijado ya consumido: barre la factory; con vault lo registra, sin vault la alta queda fallida reintentable", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "tildai-"));
+  const file = join(dir, "chats.json");
+  const c = setup({ file, writeError: "fetch failed (timeout)", txCount: 0 });
+  await c.creador.crear("y", OWNER, pesosToWei(1000)); // nonce 0 fijado, sin hash
+
+  // Caso 1: el nonce ya se consumió y en la cadena está el VaultCreated.
+  const c2 = setup({ file, txCount: 1, vaultOnchain: VAULT, vaultLogBlock: 55n });
+  const r2 = await c2.creador.crear("y", OWNER, pesosToWei(1000));
+  assert.equal(r2.estado, "ya_existente");
+  assert.equal(r2.vault, VAULT);
+  assert.equal(c2.calls.includes("write"), false);
+  assert.equal(c2.registry.get("y")?.fromBlock, "55");
+
+  // Caso 2: el nonce se consumió pero no hay VaultCreated (la tx no creó nada). La entrada queda
+  // SIN nonce → el próximo reintento fija uno nuevo.
+  const dir2 = mkdtempSync(join(tmpdir(), "tildai-"));
+  const file2 = join(dir2, "chats.json");
+  const d = setup({ file: file2, writeError: "fetch failed (timeout)", txCount: 0 });
+  await d.creador.crear("z", OWNER, pesosToWei(1000));
+  const d2 = setup({ file: file2, txCount: 1 }); // nonce 0 consumido, sin vault
+  const r3 = await d2.creador.crear("z", OWNER, pesosToWei(1000));
+  assert.equal(r3.estado, "error");
+  assert.match(r3.mensaje, /confirmó sin crear el vault.*Probá \/start de nuevo/);
+  assert.equal(d2.calls.includes("write"), false);
+  assert.equal(d2.registry.get("z")?.nonce, undefined);
+  const d3 = setup({ file: file2, txCount: 5 });
+  const r4 = await d3.creador.crear("z", OWNER, pesosToWei(1000));
+  assert.equal(r4.estado, "creado");
+  assert.equal(d3.writes[0].nonce, 5); // intento nuevo → nonce nuevo
+  rmSync(dir, { recursive: true });
+  rmSync(dir2, { recursive: true });
+});
+
+test("el nonce fijado se escribe en el archivo ANTES de difundir (crash durante writeContract)", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "tildai-"));
+  const file = join(dir, "chats.json");
+  const c = setup({ file, writeError: "timeout", txCount: 3 });
+  await c.creador.crear("w", OWNER, pesosToWei(1000));
+  const desdeArchivo = ChatVaultRegistry.load(file).get("w");
+  assert.equal(desdeArchivo?.nonce, 3);
+  rmSync(dir, { recursive: true });
 });
 
 test("createVault usa el maxRate configurado y el resumen lo muestra", async () => {
