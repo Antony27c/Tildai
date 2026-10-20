@@ -119,7 +119,7 @@ export async function cierreDeTodos(a: {
           apartado = `No aparté nada: ${(err as Error).message}`;
         }
       }
-      const notaSinFecha = sinFecha ? `\n\nOjo: hay ${sinFecha === 1 ? "un pago" : `${sinFecha} pagos`} sin fecha (son de bloques que el nodo ya no tiene) que no ${sinFecha === 1 ? "entró" : "entraron"} en el total de hoy.` : "";
+      const notaSinFecha = sinFecha ? `\n\nOjo: hay ${sinFecha === 1 ? "un pago" : `${sinFecha} pagos`} sin fecha en el historial (son de bloques que el nodo ya no tiene) que no ${sinFecha === 1 ? "entra" : "entran"} en ningún total, ni el de hoy ni el de otros días.` : "";
       await a.send(j.chatId, `${resumen}\n\nApartado:\n${apartado}${notaSinFecha}`);
     } catch (err) {
       console.error(`[tildai] ALERTA cierre del chat ${j.chatId}: ${(err as Error).message}`, err);
