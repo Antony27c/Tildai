@@ -11,27 +11,31 @@ export async function start(env: Record<string, string | undefined> = process.en
   const cfg = loadConfig(env);
   const storePath = cfg.storePath;
   if (!storePath) throw new Error('falta TILDAI_STORE_PATH');
-  const pollSeconds = Number(env.TILDAI_POLL_SECONDS ?? 10);
+  // Las variables vacías cuentan como no seteadas (||), no como valor.
+  const pollSeconds = Number(env.TILDAI_POLL_SECONDS || 10);
   if (!Number.isInteger(pollSeconds) || pollSeconds < 1) throw new Error('TILDAI_POLL_SECONDS inválido');
-  const port = Number(env.TILDAI_PORT ?? 8787);
+  const port = Number(env.TILDAI_PORT || 8787);
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('TILDAI_PORT inválido');
 
   const store = await loadStore(storePath);
   const indexer = createIndexer({ client: client ?? viemReader(cfg), store, factory: cfg.factory, token: cfg.wars, startBlock: cfg.startBlock, save: fileSaver(storePath) });
   // shortcut: sin TLS ni rate limit, escucha solo en localhost por defecto; ponerlo detrás de un proxy antes de exponerlo.
-  const server = createApp({ indexer, store, token });
-  await new Promise<void>((ok, fail) => server.once('error', fail).listen(port, env.TILDAI_HOST ?? '127.0.0.1', ok));
+  const server = createApp({ indexer, store, token, chainId: cfg.chainId });
+  await new Promise<void>((ok, fail) => server.once('error', fail).listen(port, env.TILDAI_HOST || '127.0.0.1', ok));
 
   const ctl = new AbortController();
   const watching = indexer.watch(pollSeconds * 1000, ctl.signal);
-  // Apagado prolijo: no acepta más requests, el tramo de logs en curso termina y el store queda en disco.
-  const stop = async () => {
-    const drained = new Promise<void>((ok) => server.close(() => ok()));
-    ctl.abort();
-    await watching;
-    await drained;
-    await saveStore(store, storePath);
-  };
+  // Apagado prolijo e idempotente: no acepta más requests, el tramo de logs en curso termina y el store queda en disco.
+  // La segunda señal devuelve la misma promesa: dos corridas concurrentes pisarían store.json.tmp.
+  let stopping: Promise<void> | null = null;
+  const stop = () =>
+    (stopping ??= (async () => {
+      const drained = new Promise<void>((ok) => server.close(() => ok()));
+      ctl.abort();
+      await watching;
+      await drained;
+      await saveStore(store, storePath);
+    })());
   return { server, store, stop };
 }
 

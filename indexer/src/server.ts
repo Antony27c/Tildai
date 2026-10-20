@@ -47,7 +47,8 @@ async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> 
 
 const pview = (p: Payment) => ({ id: p.id, from: p.from, amount: p.amount.toString(), txHash: p.txHash, timestamp: p.timestamp ?? null, ...(p.saleId && { saleId: p.saleId }) });
 
-const view = (s: Sale) => ({ id: s.id, vault: s.vault, amount: s.amount.toString(), status: s.status, ...(s.txHash && { txHash: s.txHash }) });
+// txHash queda por compatibilidad como el último informado; la lista completa es txHashes.
+const view = (s: Sale) => ({ id: s.id, vault: s.vault, amount: s.amount.toString(), status: s.status, txHashes: s.txHashes, ...(s.txHashes.length && { txHash: s.txHashes.at(-1) }) });
 
 const intParam = (url: URL, name: string, def: number) => {
   const v = url.searchParams.get(name);
@@ -77,7 +78,7 @@ const arDay = (ms: number) => new Date(ms + AR).toISOString().slice(0, 10);
 
 // Métricas para la entrega. Un pago sin timestamp cuenta en los totales pero no en
 // byDay ni en activeVaults7d: ubicarlo en un día sería inventar la fecha.
-export function stats(store: Store, now = Date.now()) {
+export function stats(store: Store, chainId: number, now = Date.now()) {
   const days = new Map<string, { payments: number; warsReceived: bigint }>();
   for (let i = 13; i >= 0; i--) days.set(arDay(now - i * DAY), { payments: 0, warsReceived: 0n });
   const active = new Set<string>();
@@ -99,6 +100,7 @@ export function stats(store: Store, now = Date.now()) {
   let salesCobradas = 0;
   for (const s of store.sales.values()) if (s.status === 'cobrada') salesCobradas++;
   return {
+    chainId,
     vaults: store.vaults.size,
     activeVaults7d: active.size,
     payments: store.payments.size,
@@ -110,7 +112,7 @@ export function stats(store: Store, now = Date.now()) {
   };
 }
 
-export function createApp(o: { indexer: Indexer; store: Store; token: string; onError?: (e: unknown) => void }): Server {
+export function createApp(o: { indexer: Indexer; store: Store; token: string; chainId: number; onError?: (e: unknown) => void }): Server {
   const { indexer, store } = o;
   const log = o.onError ?? ((e: unknown) => console.error('server:', e));
 
@@ -174,7 +176,7 @@ export function createApp(o: { indexer: Indexer; store: Store; token: string; on
       // El cursor es el seq del último evento devuelto: con más de 500, el agente sigue desde ahí y no se saltea.
       return send(res, 200, { events: list, cursor: list.at(-1)?.seq ?? since });
     }
-    if (key === 'GET /stats') return send(res, 200, stats(store));
+    if (key === 'GET /stats') return send(res, 200, stats(store, o.chainId));
     throw new HttpError(404, 'ruta inexistente');
   }
 

@@ -48,7 +48,8 @@ function storeConDatos() {
 const byDay = (r: ReturnType<typeof stats>, day: string) => r.byDay.find((x) => x.day === day)!;
 
 test('stats: totales con bigint, activos a 7 días y pagos sin timestamp', () => {
-  const r = stats(storeConDatos(), NOW);
+  const r = stats(storeConDatos(), 42220, NOW);
+  assert.equal(r.chainId, 42220); // viene de la config, así /metricas no adivina la red
   assert.equal(r.vaults, 3);
   assert.equal(r.payments, 8);
   assert.equal(r.salesCobradas, 1);
@@ -59,7 +60,7 @@ test('stats: totales con bigint, activos a 7 días y pagos sin timestamp', () =>
 });
 
 test('stats: byDay son 14 días en hora argentina, con días vacíos en cero', () => {
-  const r = stats(storeConDatos(), NOW);
+  const r = stats(storeConDatos(), 42220, NOW);
   assert.equal(r.byDay.length, 14);
   assert.equal(r.byDay[0].day, '2026-10-06');
   assert.equal(r.byDay.at(-1)!.day, '2026-10-19');
@@ -79,7 +80,7 @@ test('stats: la medianoche argentina es a las 03:00 UTC', () => {
   s.vaults.set(V1, '0x00000000000000000000000000000000000000c1');
   s.payments.set('a:0', pay(1, V1, 1n, UTC(2026, 9, 19, 2, 59, 59, 999)));
   s.payments.set('b:0', pay(2, V1, 2n, UTC(2026, 9, 19, 3, 0, 0)));
-  const r = stats(s, NOW);
+  const r = stats(s, 42220, NOW);
   assert.equal(byDay(r, '2026-10-18').warsReceived, '1');
   assert.equal(byDay(r, '2026-10-19').warsReceived, '2');
 });
@@ -89,7 +90,7 @@ test('stats: sobrevive un reinicio leyendo el JSON persistido', async () => {
   const original = storeConDatos();
   await saveStore(original, path);
   const cargado = await loadStore(path);
-  assert.deepEqual(stats(cargado, NOW), stats(original, NOW));
+  assert.deepEqual(stats(cargado, 42220, NOW), stats(original, 42220, NOW));
 });
 
 let server: Server;
@@ -97,7 +98,7 @@ let base: string;
 before(async () => {
   const store = storeConDatos();
   const indexer = { createSale: async () => { throw new Error('no usado'); }, markPaidByTx: async () => { throw new Error('no usado'); } };
-  server = createApp({ indexer, store, token: TOKEN, onError: () => {} });
+  server = createApp({ indexer, store, token: TOKEN, chainId: 42220, onError: () => {} });
   await new Promise<void>((ok) => server.listen(0, '127.0.0.1', ok));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
@@ -111,6 +112,7 @@ test('GET /stats: 401 sin token y 200 con la forma esperada', async () => {
   assert.equal((await get('/stats', null)).status, 401);
   const r = await get('/stats');
   assert.equal(r.status, 200);
+  assert.equal(r.body.chainId, 42220);
   assert.equal(r.body.vaults, 3);
   assert.equal(r.body.payments, 8);
   assert.equal(r.body.salesCobradas, 1);
