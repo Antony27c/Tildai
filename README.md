@@ -6,7 +6,7 @@ Tildai es un agente de caja para comercios de barrio en Argentina. Cobra en **wA
 
 Proyecto para la hackathon **Agents on Open Rails** (Loops House × Celo). Track principal: *Stable Agents: LatAm (Ripio × Celo)*. Secundario: *Open Corridors: Textile FX*.
 
-> **Estado (19/10/2026):** contratos, agente, indexer, página de cobro y módulo FX escritos y con tests. Desplegado en **Celo Sepolia** con tokens de prueba. **Mainnet: pendiente** (falta fondear la wallet del agente con USD₮ para gas). Todavía no hay comercios reales usándolo.
+> **Estado (20/10/2026):** contratos, agente, indexer, página de cobro y módulo FX escritos y con tests. Desplegado en **Celo Sepolia** con tokens de prueba. **Mainnet: pendiente** (falta fondear la wallet del agente con USD₮ para gas). Todavía no hay comercios reales usándolo.
 
 ## El problema
 
@@ -15,8 +15,8 @@ El comercio chico argentino (kiosco, verdulería, peluquería) cobra con posnet 
 ## Qué hace Tildai
 
 - **Cobra en pesos onchain.** El dueño escribe "cobrame 8.500" en Telegram y recibe un link con QR. El cliente paga en wARS desde la página de cobro sin pagar gas (x402 con Permit2) o, si no tiene cripto, con pesos por el on-ramp de Ripio directo al vault.
-- **Avisa los pagos.** Una venta queda "cobrada" solo cuando hay un `Transfer` de wARS confirmado hacia el vault.
-- **Cierra la caja** todos los días a las 21 h (hora argentina): total, cantidad de ventas, ticket promedio y comparación con el mismo día de la semana anterior.
+- **Avisa los pagos** por Telegram apenas se confirman (cada minuto, leyendo `/events` del indexer). Una venta queda "cobrada" solo cuando hay un `Transfer` de wARS confirmado hacia el vault.
+- **Cierra la caja de cada comercio** todos los días a las 21 h (hora argentina): total, cantidad de ventas, ticket promedio y comparación con el mismo día de la semana anterior.
 - **Aparta ahorro e impuestos** después del cierre, según los porcentajes del dueño. La plata no sale del vault: pasa a saldos protegidos.
 - **Dolariza** wARS a USD₮ en Textile FX cuando el dueño lo pide, con precio máximo y tope por operación fijados onchain.
 - **Retira** a la wallet del dueño y le da el link de off-ramp de Ripio para pasarlo a su cuenta.
@@ -26,9 +26,9 @@ El comercio chico argentino (kiosco, verdulería, peluquería) cobra con posnet 
 | Carpeta | Qué es |
 |---|---|
 | [`contracts/`](contracts/) | Solidity (Foundry). `TildaiVault`: la caja de cada comercio, con saldos operativo / ahorro / impuestos, tope diario, precio máximo del dólar y swap con Textile. `TildaiFactory`: crea un vault por comercio y lleva el registro `isVault` |
-| [`agent/`](agent/) | Agente en [eve](https://eve.dev) con canal de Telegram. Tools: `crear_vault`, `crear_cobro`, `aviso_pago`, `ventas_hoy`, `apartar`, `retirar`, `dolarizar`. Schedule `cierre_caja` (21 h AR). Todas las tx salen por `agentClients()` con attribution tag |
-| [`indexer/`](indexer/) | Servicio HTTP que descubre vaults por `VaultCreated`, indexa `Transfer` de wARS hacia ellos, concilia ventas y expone `/sales`, `/payments` y `/events` |
-| [`web/`](web/) | Next.js: página de cobro con QR, pago x402 en wARS (Permit2), botón "Pagar con pesos" (Ripio) y estado del pago consultando al indexer |
+| [`agent/`](agent/) | Agente en [eve](https://eve.dev) con canal de Telegram. Tools: `crear_vault`, `crear_cobro`, `aviso_pago`, `ventas_hoy`, `apartar`, `retirar`, `dolarizar`. Schedules `cierre_caja` (21 h AR, por comercio) y `avisos_ventas` (cada minuto, push por `/events` del indexer). Todas las tx salen por `agentClients()` con attribution tag |
+| [`indexer/`](indexer/) | Servicio HTTP que descubre vaults por `VaultCreated`, indexa `Transfer` de wARS hacia ellos, concilia ventas y expone `/sales`, `/payments`, `/events` y `/stats` |
+| [`web/`](web/) | Next.js: página de cobro con QR, pago x402 en wARS (Permit2), botón "Pagar con pesos" (Ripio), `/cartel` imprimible, `/comprobante`, `/panel` por comercio y `/metricas` |
 | [`fx/`](fx/) | Cliente de Textile FX: cotización preview, cotización firme (RFQ) y P&L de la dolarización leyendo los eventos `Swapped` del vault |
 
 ```mermaid
@@ -40,7 +40,8 @@ flowchart TD
     R -- Transfer wARS --> V
     V -- "logs Transfer" --> I[indexer: concilia la venta]
     I -- estado de la venta --> W
-    V -- "logs Transfer" --> A[agent: aviso_pago / ventas_hoy]
+    I -- "/events" --> A[agent: avisos y tools]
+    V -- "logs Transfer" --> A
     A -- "✓ Entraron $8.500" --> T[Dueño en Telegram]
     A -- "21 h: cierre_caja" --> T
     A -- "allocate: ahorro / impuestos" --> V
@@ -48,13 +49,13 @@ flowchart TD
     X -- USD₮ --> V
 ```
 
-Hoy el agente lee los `Transfer` directo de la cadena y el aviso sale cuando el dueño pregunta ("¿me pagaron?"). El indexer ya expone `/events` con cursor para avisos push, pero el agente todavía no lo consume (ver limitaciones).
+Con el indexer configurado (`TILDAI_INDEXER_URL` + `TILDAI_INDEXER_TOKEN`) es la fuente de verdad de las ventas y el agente manda el aviso de cada pago sin que el dueño pregunte; las lecturas onchain quedan como verificación. Sin indexer el agente lee los `Transfer` directo de la cadena y el aviso sale cuando el dueño pregunta ("¿me pagaron?").
 
 ## Por qué encaja en cada track
 
 | Track | Cómo encaja | Qué está hecho |
 |---|---|---|
-| **Stable Agents: LatAm (Ripio × Celo)** | Agente de comercio que cobra, concilia, ahorra y liquida en wARS: lo que pide el track ("merchant agents that invoice, collect, and reconcile"). Usa los ramps de Ripio para entrar y salir de pesos, x402 para que el cliente no pague gas y fee abstraction para que el agente pague gas en USD₮ | Vault + factory, alta por `/start`, cobro x402 y Ripio, conciliación, cierre y apartado. Probado en Sepolia; mainnet pendiente |
+| **Stable Agents: LatAm (Ripio × Celo)** | Agente de comercio que cobra, concilia, ahorra y liquida en wARS: lo que pide el track ("merchant agents that invoice, collect, and reconcile"). Usa los ramps de Ripio para entrar y salir de pesos, x402 para que el cliente no pague gas y fee abstraction para que el agente pague gas en USD₮ | Vault + factory, alta por invitación con `/start`, cobro x402 y Ripio, conciliación, avisos push, cierre por comercio y apartado. Probado en Sepolia; mainnet pendiente |
 | **Open Corridors: Textile FX** | Tesorería para comercios de barrio: el vault es el taker del RFQ de Textile y dolariza wARS → USD₮ dentro de límites onchain (precio máximo, tope por swap, tope diario). P&L calculado desde los eventos `Swapped` | Cliente de la API de Textile (preview y cotización firme RFQ, con API key de partner) y `vault.swap` probado en un fork de mainnet. Sin swaps reales todavía |
 
 ## Modelo de seguridad
@@ -84,7 +85,7 @@ Scripts del agente (desde `agent/`, después de `forge build` en `contracts/`):
 - `npm run wallet`: genera la wallet del agente y guarda la clave en `.env`; imprime solo la dirección.
 - `node scripts/deploy-sepolia.ts`: despliega factory + tokens de prueba en Sepolia y verifica el attribution tag de cada tx. Guarda en `contracts/deployments/celo-sepolia.json`.
 - `node scripts/register-8004.ts celoSepolia|celo`: registra la identidad ERC-8004 desde la wallet del agente. Si quedó a medias (registrada sin `registrations` en la URI), solo completa la URI.
-- `node scripts/deploy-mainnet.ts`: dry run (simula, no envía). Con `CONFIRM_MAINNET=1` despliega; guarda el hash en `contracts/deployments/celo.json` apenas lo envía (un reintento busca el recibo, no redespliega), junto con el commit y el hash del bytecode, y relee `wars()`, `usdt()` y `agent()` de la factory. Igual para `register-8004.ts celo`. En PowerShell: `$env:CONFIRM_MAINNET="1"; node scripts/deploy-mainnet.ts`; en cmd: `set "CONFIRM_MAINNET=1"` y después el comando.
+- `node scripts/deploy-mainnet.ts`: dry run (simula, no envía). Con `CONFIRM_MAINNET=1` despliega; antes de enviar guarda `deployNonce` y `expectedFactory` en `contracts/deployments/celo.json` junto con el commit y el hash del bytecode (un reintento recupera por nonce verificando el tag de la tx, nunca despliega una segunda factory), y relee `wars()`, `usdt()` y `agent()` de la factory. Igual para `register-8004.ts celo`. En PowerShell: `$env:CONFIRM_MAINNET="1"; node scripts/deploy-mainnet.ts`; en cmd: `set "CONFIRM_MAINNET=1"` y después el comando.
 
 ## Variables de entorno
 
@@ -92,9 +93,9 @@ Solo nombres. Los valores van en un `.env` por carpeta, que está en `.gitignore
 
 | Carpeta | Variables |
 |---|---|
-| `agent/` | `AGENT_PRIVATE_KEY`, `TEXTILE_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET_TOKEN`, `TELEGRAM_BOT_USERNAME`, `TILDAI_OWNER_CHAT_ID`, `TILDAI_NETWORK` (`celo` o `celoSepolia`), `TILDAI_FACTORY`, `TILDAI_FROM_BLOCK`, `TILDAI_VAULT`, `TILDAI_REGISTRY`, `TILDAI_PAY_BASE_URL`, `TILDAI_SAVINGS_PCT`, `TILDAI_TAXES_PCT`; solo scripts: `CONFIRM_MAINNET`. Credenciales del modelo: `/login` en la TUI de eve |
+| `agent/` | `AGENT_PRIVATE_KEY`, `TEXTILE_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET_TOKEN`, `TELEGRAM_BOT_USERNAME`, `TILDAI_OWNER_CHAT_ID`, `TILDAI_ALLOWED_CHATS`, `TILDAI_OPEN_SIGNUP`, `TILDAI_NETWORK` (`celo` o `celoSepolia`), `TILDAI_FACTORY`, `TILDAI_FROM_BLOCK`, `TILDAI_VAULT`, `TILDAI_REGISTRY`, `TILDAI_PAY_BASE_URL`, `TILDAI_SAVINGS_PCT`, `TILDAI_TAXES_PCT`, `TILDAI_MAX_RATE`, `TILDAI_MAX_ALTAS_DIA`, `TILDAI_ALTA_PENDIENTE_MIN`, `TILDAI_OPS_FILE`, `TILDAI_INDEXER_URL`, `TILDAI_INDEXER_TOKEN`, `TILDAI_EVENTS_FILE`; solo scripts: `CONFIRM_MAINNET`. Credenciales del modelo: `/login` en la TUI de eve |
 | `indexer/` | `TILDAI_INDEXER_TOKEN` (mín. 16 caracteres), `TILDAI_STORE_PATH`, `TILDAI_NETWORK` (`celo` o `celo-sepolia`), `TILDAI_FACTORY`, `TILDAI_FROM_BLOCK` (obligatorios en mainnet), `TILDAI_WARS`, `RPC_URL`, `TILDAI_POLL_SECONDS`, `TILDAI_PORT`, `TILDAI_HOST` |
-| `web/` | `NEXT_PUBLIC_BASE_URL`, `TILDAI_FACTORY`, `TILDAI_CHAIN_ID` (`42220` o `11142220`), `TILDAI_RPC_URL`, `TILDAI_DEMO`, `X402_API_KEY`, `X402_FACILITATOR_URL`, `TILDAI_INDEXER_URL`, `TILDAI_INDEXER_TOKEN` (ver [`web/.env.example`](web/.env.example)) |
+| `web/` | `NEXT_PUBLIC_BASE_URL`, `NEXT_PUBLIC_TELEGRAM_BOT_URL`, `TILDAI_FACTORY`, `TILDAI_CHAIN_ID` (`42220` o `11142220`), `TILDAI_RPC_URL`, `TILDAI_DEMO`, `X402_API_KEY`, `X402_FACILITATOR_URL`, `TILDAI_INDEXER_URL`, `TILDAI_INDEXER_TOKEN` (ver [`web/.env.example`](web/.env.example)) |
 | `fx/` | `TEXTILE_API_KEY` |
 
 ## Datos de la entrega
@@ -120,14 +121,12 @@ Fuente de Sepolia: [`contracts/deployments/celo-sepolia.json`](contracts/deploym
 
 - **Mainnet pendiente de fondeo.** Falta cargar USD₮ en la wallet del agente para registrar ERC-8004, desplegar la factory y crear vaults. También falta la `X402_API_KEY` del facilitador de mainnet. El cobro x402 solo funciona con `TILDAI_CHAIN_ID=42220`, así que en Sepolia no se probó un pago x402 de punta a punta.
 - **Textile tiene cotización pero volumen casi nulo** en wARS/USD₮ (y `bid` en 0: no hay comprador para volver de USD₮ a wARS). El swap se probó en un fork de mainnet; no hay swaps reales.
-- **Agente e indexer no están conectados.** El agente no registra las ventas en el indexer ni consume `/events`: concilia leyendo los logs de la cadena y avisa cuando el dueño pregunta, no por push.
-- **El cierre de caja solo corre para el vault del dueño configurado** (`TILDAI_OWNER_CHAT_ID` + `TILDAI_VAULT`), no para cada comercio dado de alta por `/start`.
-- **Telegram abierto al `/start`** si no se define `TILDAI_OWNER_CHAT_ID`: falta rate limit o allowlist antes de abrirlo en mainnet.
+- **Sin indexer no hay avisos push.** Con `TILDAI_INDEXER_URL` + `TILDAI_INDEXER_TOKEN` el agente lo usa como fuente de verdad de ventas y avisa cada cobro por `/events`; sin él, concilia leyendo logs de la cadena y el aviso sale solo cuando el dueño pregunta.
+- **Alta por invitación por defecto.** Solo hablan con el agente los chats de `TILDAI_ALLOWED_CHATS`, el chat del dueño y los ya registrados; `TILDAI_OPEN_SIGNUP=1` lo abre a cualquiera (cada alta gasta gas del agente, con tope `TILDAI_MAX_ALTAS_DIA`). No hay rate limit por chat.
 
 Atajos conocidos (comentarios `shortcut:` en el código):
 
 - `agent/src/sales.ts`: ventas en memoria, se pierden al reiniciar. Un `Transfer` no lleva memo: se asocia a la venta pendiente más vieja con el mismo monto creada antes del pago.
-- `agent/src/vaultOps.ts`: el registro de cada operación con plata vive en memoria y va al log; falta persistirlo y avisarlo por Telegram.
 - `agent/src/alta.ts`: el registro chat → vault es un JSON local por proceso.
 - `agent/src/chainVault.ts`: lee los logs del vault en tramos en cada consulta, sin cursor.
 - `agent/src/cierreApartado.ts`: si el cierre muere entre ahorro e impuestos, el reintento puede apartar menos de impuestos.
