@@ -20,6 +20,7 @@ export type VaultState =
 export type WithdrawOutcome =
   | { kind: "confirmed"; hash: `0x${string}` }
   | { kind: "rejected" }
+  | { kind: "unknown"; hash: `0x${string}` }
   | { kind: "failed"; reason: string };
 
 const chains = { 42220: celo, 11142220: celoSepolia } as const;
@@ -119,20 +120,30 @@ export async function withdrawAll(provider: Eip1193, chainId: number, vault: Add
     // El saldo se relee acá, justo antes de firmar: el monto va exacto en la tx.
     const amount = BigInt((await reader.readContract({ address: token, abi: erc20, functionName: "balanceOf", args: [vault] })) as bigint);
     if (amount === 0n) return { kind: "failed", reason: "La caja ya no tiene saldo en este token." };
-    const hash = await wallet.writeContract({
-      account,
-      chain,
-      address: vault,
-      abi: vaultAbi,
-      functionName: "ownerWithdraw",
-      args: [token, account, amount],
-    });
+    let hash: `0x${string}`;
+    try {
+      hash = await wallet.writeContract({
+        account,
+        chain,
+        address: vault,
+        abi: vaultAbi,
+        functionName: "ownerWithdraw",
+        args: [token, account, amount],
+      });
+    } catch (e) {
+      return mapWithdrawError(e);
+    }
     deps.onSent?.(hash);
-    const receipt = await reader.waitForTransactionReceipt({ hash });
-    // Recién acá está confirmado: minado y con status success.
-    return receipt.status === "success"
-      ? { kind: "confirmed", hash }
-      : { kind: "failed", reason: "La transacción falló en la red. No se movió nada de tu caja." };
+    try {
+      const receipt = await reader.waitForTransactionReceipt({ hash });
+      // Recién acá está confirmado: minado y con status success.
+      return receipt.status === "success"
+        ? { kind: "confirmed", hash }
+        : { kind: "failed", reason: "La transacción falló en la red. No se movió nada de tu caja." };
+    } catch {
+      // La tx ya salió: pudo minarse igual. Ante la duda, no afirmar nada.
+      return { kind: "unknown", hash };
+    }
   } catch (e) {
     return mapWithdrawError(e);
   }
@@ -141,7 +152,7 @@ export async function withdrawAll(provider: Eip1193, chainId: number, vault: Add
 function mapWithdrawError(e: unknown): WithdrawOutcome {
   const msg = e instanceof Error ? `${e.name} ${e.message} ${(e as { cause?: { message?: string } }).cause?.message ?? ""}` : String(e);
   if (/user.?reject|denied|4001/i.test(msg)) return { kind: "rejected" };
-  if (/insufficient funds|exceeds the balance|not enough|out of gas|gas/i.test(msg)) return { kind: "failed", reason: GAS_MESSAGE };
+  if (/insufficient funds|exceeds the balance/i.test(msg)) return { kind: "failed", reason: GAS_MESSAGE };
   return { kind: "failed", reason: "No pudimos completar el retiro. No se movió nada de tu caja." };
 }
 

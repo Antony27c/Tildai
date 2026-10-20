@@ -107,6 +107,12 @@
   color: var(--ok);
 }
 
+.warn {
+  margin: 0;
+  font-weight: 600;
+  color: var(--warn);
+}
+
 .error {
   margin: 0;
   color: var(--danger);

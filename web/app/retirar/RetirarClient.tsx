@@ -4,7 +4,7 @@ import type { Address, EIP1193Provider } from "viem";
 import { formatToken, isOwner, refreshBalances, withdrawAll, type TokenBalance } from "../../lib/retirar.ts";
 import styles from "./retirar.module.css";
 
-type Phase = "idle" | "firmando" | "enviado" | "confirmado" | "rechazado" | "error";
+type Phase = "idle" | "firmando" | "enviado" | "confirmado" | "rechazado" | "unknown" | "error";
 
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 const provider = () => (typeof window !== "undefined" ? (window as { ethereum?: EIP1193Provider }).ethereum : undefined);
@@ -16,6 +16,8 @@ export default function RetirarClient({ vault, chainId, owner, tokens: initial, 
   tokens: TokenBalance[];
   scan: string;
 }) {
+  // undefined = todavía no se detectó (server y primer render coinciden); null = no hay wallet.
+  const [wallet, setWallet] = useState<EIP1193Provider | null | undefined>(undefined);
   const [account, setAccount] = useState<Address | null>(null);
   const [tokens, setTokens] = useState(initial);
   const [phase, setPhase] = useState<Phase>("idle");
@@ -24,19 +26,24 @@ export default function RetirarClient({ vault, chainId, owner, tokens: initial, 
   const [msg, setMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    const p = provider() as (EIP1193Provider & { on?: (e: string, cb: (a: string[]) => void) => void; removeListener?: (e: string, cb: (a: string[]) => void) => void }) | undefined;
-    p?.request({ method: "eth_accounts" })
+    setWallet(provider() ?? null);
+  }, []);
+
+  useEffect(() => {
+    if (!wallet) return;
+    const p = wallet as EIP1193Provider & { on?: (e: string, cb: (a: string[]) => void) => void; removeListener?: (e: string, cb: (a: string[]) => void) => void };
+    p.request({ method: "eth_accounts" })
       .then((a) => Array.isArray(a) && a[0] && setAccount(a[0] as Address))
       .catch(() => {});
     const onAccounts = (a: string[]) => setAccount((a?.[0] as Address) ?? null);
-    p?.on?.("accountsChanged", onAccounts);
-    return () => p?.removeListener?.("accountsChanged", onAccounts);
-  }, []);
+    p.on?.("accountsChanged", onAccounts);
+    return () => p.removeListener?.("accountsChanged", onAccounts);
+  }, [wallet]);
 
   const conectar = async () => {
     setMsg(null);
     try {
-      const a = (await provider()?.request({ method: "eth_requestAccounts" })) as Address[] | undefined;
+      const a = (await wallet?.request({ method: "eth_requestAccounts" })) as Address[] | undefined;
       if (a?.[0]) setAccount(a[0]);
     } catch {
       setMsg("No pudimos conectar la billetera.");
@@ -44,13 +51,12 @@ export default function RetirarClient({ vault, chainId, owner, tokens: initial, 
   };
 
   const retirar = async (t: TokenBalance) => {
-    const p = provider();
-    if (!p) return;
+    if (!wallet) return;
     setMsg(null);
     setHash(null);
     setBusy(t.token);
     setPhase("firmando");
-    const r = await withdrawAll(p, chainId, vault as Address, t.token, {
+    const r = await withdrawAll(wallet, chainId, vault as Address, t.token, {
       onSent: (h) => {
         setHash(h);
         setPhase("enviado");
@@ -61,6 +67,12 @@ export default function RetirarClient({ vault, chainId, owner, tokens: initial, 
       setPhase("confirmado");
       const fresh = await refreshBalances(chainId, vault as Address, tokens);
       if (fresh) setTokens(fresh);
+    } else if (r.kind === "unknown") {
+      // La tx salió pero no sabemos si minó: releer saldos y avisar, sin afirmar nada.
+      setPhase("unknown");
+      setHash(r.hash);
+      const fresh = await refreshBalances(chainId, vault as Address, tokens);
+      if (fresh) setTokens(fresh);
     } else if (r.kind === "rejected") {
       setPhase("rechazado");
     } else {
@@ -69,7 +81,14 @@ export default function RetirarClient({ vault, chainId, owner, tokens: initial, 
     }
   };
 
-  if (!provider()) {
+  if (wallet === undefined) {
+    return (
+      <section className={styles.card}>
+        <p className={styles.text}>Buscando tu billetera…</p>
+      </section>
+    );
+  }
+  if (wallet === null) {
     return (
       <section className={styles.card}>
         <p className={styles.error}>Necesitás una billetera (como MetaMask o MiniPay) para retirar.</p>
@@ -103,7 +122,7 @@ export default function RetirarClient({ vault, chainId, owner, tokens: initial, 
       <p className={styles.text}>
         Dueña: <span className={styles.mono}>{short(account)}</span>
       </p>
-      {conSaldo.length === 0 && <p className={styles.text}>{phase === "confirmado" ? "La caja quedó vacía." : "La caja está vacía."}</p>}
+      {conSaldo.length === 0 && <p className={styles.text}>{phase === "confirmado" || phase === "unknown" ? "La caja quedó vacía." : "La caja está vacía."}</p>}
       {conSaldo.map((t) => (
         <div key={t.token} className={styles.row}>
           <div>
@@ -133,6 +152,17 @@ export default function RetirarClient({ vault, chainId, owner, tokens: initial, 
           <a className={styles.link} href={`${scan}${hash}`} target="_blank" rel="noreferrer">
             Ver en el explorador
           </a>
+        </p>
+      )}
+      {phase === "unknown" && (
+        <p className={styles.warn}>
+          Mandaste el retiro pero no pudimos confirmarlo.{" "}
+          {hash && (
+            <a className={styles.link} href={`${scan}${hash}`} target="_blank" rel="noreferrer">
+              Revisalo en el explorador
+            </a>
+          )}{" "}
+          antes de volver a intentar.
         </p>
       )}
       {phase === "rechazado" && <p className={styles.text}>Rechazaste la firma. Podés intentarlo de nuevo.</p>}

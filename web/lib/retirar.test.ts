@@ -124,10 +124,27 @@ test("recibo revertido: error, nunca 'confirmado'", async () => {
   assert.deepEqual(r, { kind: "failed", reason: "La transacción falló en la red. No se movió nada de tu caja." });
 });
 
+test("la espera del recibo falla después de enviar: 'unknown' con el hash, nunca 'no se movió nada'", async () => {
+  const p = provider();
+  const r = await withdrawAll(p, 11142220, VAULT, WARS_SEP, {
+    wallet: taggedWallet(p),
+    reader: { ...reader(), waitForTransactionReceipt: async () => { throw new Error("timeout"); } },
+  });
+  assert.equal(r.kind, "unknown");
+  if (r.kind === "unknown") assert.equal(r.hash, HASH);
+});
+
 test("sin saldo para la comisión: mensaje pide USD₮ o USDC (wARS no sirve)", async () => {
   const p = provider({ sendError: new Error("insufficient funds for gas * price + value") });
   const r = await withdrawAll(p, 11142220, VAULT, WARS_SEP, { wallet: taggedWallet(p), reader: receiptReader("success") });
   assert.deepEqual(r, { kind: "failed", reason: GAS_MESSAGE });
+});
+
+test("revert en la estimación de gas: mensaje genérico, no el de comisión", async () => {
+  const err = Object.assign(new Error("EstimateGasExecutionError: execution reverted: NotOwner()"), { name: "EstimateGasExecutionError" });
+  const p = provider({ sendError: err });
+  const r = await withdrawAll(p, 11142220, VAULT, WARS_SEP, { wallet: taggedWallet(p), reader: receiptReader("success") });
+  assert.deepEqual(r, { kind: "failed", reason: "No pudimos completar el retiro. No se movió nada de tu caja." });
 });
 
 test("saldo cero al releer o red distinta: no se firma nada", async () => {
